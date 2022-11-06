@@ -172,7 +172,8 @@ class DetectionDetailerScript(scripts.Script):
         
         # Optional secondary pre-processing run
         if (dd_model_b != "None" and dd_preprocess_b):
-            results_b_pre = inference(init_image, dd_model_b, dd_conf_b/100.0, "B")
+            label_b_pre = "B"
+            results_b_pre = inference(init_image, dd_model_b, dd_conf_b/100.0, label_b_pre)
             masks_b_pre = create_segmasks(results_b_pre)
             masks_b_pre = dilate_masks(masks_b_pre, dd_dilation_factor_b, 1)
             if (len(masks_b_pre) > 0):
@@ -180,7 +181,7 @@ class DetectionDetailerScript(scripts.Script):
                 shared.state.current_image = create_segmask_preview(results_b_pre, init_image)
                 gen_count = len(masks_b_pre)
                 state.job_count = ddetail_count * gen_count
-                print(f"Processing {len(masks_b_pre)} model B detections per output image for a total of {state.job_count} generation(s).")
+                print(f"Processing {len(masks_b_pre)} model {label_b_pre} detections per output image for a total of {state.job_count} generation(s).")
                 for n in range(ddetail_count):
                     start_seed = seed + n
                     p.seed = start_seed
@@ -202,11 +203,15 @@ class DetectionDetailerScript(scripts.Script):
         # Primary run
         if (dd_model_a != "None"):
             init_image = p.init_images[0]
-            results_a = inference(init_image, dd_model_a, dd_conf_a/100.0, "A")
+            label_a = "A"
+            if (dd_bitwise_and_b):
+                label_a = "A AND B"
+            results_a = inference(init_image, dd_model_a, dd_conf_a/100.0, label_a)
             masks_a = create_segmasks(results_a)
             masks_a = dilate_masks(masks_a, dd_dilation_factor_a, 1)
             if (dd_model_b != "None" and dd_bitwise_and_b):
-                results_b = inference(init_image, dd_model_b, dd_conf_b/100.0, "B")
+                label_b = "B"
+                results_b = inference(init_image, dd_model_b, dd_conf_b/100.0, label_b)
                 masks_b = create_segmasks(results_b)
                 masks_b = dilate_masks(masks_b, dd_dilation_factor_b, 1)
                 if (len(masks_b) > 0):
@@ -229,7 +234,7 @@ class DetectionDetailerScript(scripts.Script):
                 shared.state.current_image = create_segmask_preview(results_a, init_image)
                 gen_count = len(masks_a)
                 state.job_count = ddetail_count * gen_count
-                print(f"Processing {len(masks_a)} model A detections per output image for a total of {state.job_count} generation(s).")
+                print(f"Processing {len(masks_a)} model {label_a} detections per output image for a total of {state.job_count} generation(s).")
                 for n in range(ddetail_count):
                     start_seed = seed + n
                     p.seed = start_seed
