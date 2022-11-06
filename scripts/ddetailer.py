@@ -172,7 +172,7 @@ class DetectionDetailerScript(scripts.Script):
         
         # Optional secondary pre-processing run
         if (dd_model_b != "None" and dd_preprocess_b):
-            results_b_pre = inference(init_image, dd_model_b, dd_conf_b/100.0)
+            results_b_pre = inference(init_image, dd_model_b, dd_conf_b/100.0, "B")
             masks_b_pre = createsegmasks(results_b_pre)
             masks_b_pre = dilatemasks(masks_b_pre, dd_dilation_factor_b, 1)
             if (len(masks_b_pre) > 0):
@@ -202,11 +202,11 @@ class DetectionDetailerScript(scripts.Script):
         # Primary run
         if (dd_model_a != "None"):
             init_image = p.init_images[0]
-            results_a = inference(init_image, dd_model_a, dd_conf_a/100.0)
+            results_a = inference(init_image, dd_model_a, dd_conf_a/100.0, "A")
             masks_a = createsegmasks(results_a)
             masks_a = dilatemasks(masks_a, dd_dilation_factor_a, 1)
             if (dd_model_b != "None" and dd_bitwise_AND_b):
-                results_b = inference(init_image, dd_model_b, dd_conf_b/100.0)
+                results_b = inference(init_image, dd_model_b, dd_conf_b/100.0, "B")
                 masks_b = createsegmasks(results_b)
                 masks_b = dilatemasks(masks_b, dd_dilation_factor_b, 1)
                 if (len(masks_b) > 0):
@@ -386,15 +386,15 @@ from mmdet.core import get_classes
 from mmdet.apis import (inference_detector,
                         init_detector)
 
-def inference(image, modelname, conf_thres):
+def inference(image, modelname, conf_thres, label):
     path = modelpath(modelname)
     if ( "mmdet" in path and "bbox" in path ):
-        results = inference_mmdet_bbox(image, modelname, conf_thres)
+        results = inference_mmdet_bbox(image, modelname, conf_thres, label)
     elif ( "mmdet" in path and "segm" in path):
-        results = inference_mmdet_segm(image, modelname, conf_thres)
+        results = inference_mmdet_segm(image, modelname, conf_thres, label)
     return results
 
-def inference_mmdet_segm(image, modelname, conf_thres):
+def inference_mmdet_segm(image, modelname, conf_thres, label):
     model_checkpoint = modelpath(modelname)
     model_config = os.path.splitext(model_checkpoint)[0] + ".py"
     model_device = "cuda:0"
@@ -414,13 +414,13 @@ def inference_mmdet_segm(image, modelname, conf_thres):
     filter_inds = np.where(bboxes[:,-1] > conf_thres)[0]
     results = [[],[],[]]
     for i in filter_inds:
-        results[0].append(classes[labels[i]])
+        results[0].append(label + "-" + classes[labels[i]])
         results[1].append(bboxes[i])
         results[2].append(segms[i])
 
     return results
 
-def inference_mmdet_bbox(image, modelname, conf_thres):
+def inference_mmdet_bbox(image, modelname, conf_thres, label):
     model_checkpoint = modelpath(modelname)
     model_config = os.path.splitext(model_checkpoint)[0] + ".py"
     model_device = "cuda:0"
@@ -441,7 +441,7 @@ def inference_mmdet_bbox(image, modelname, conf_thres):
     filter_inds = np.where(bboxes[:,-1] > conf_thres)[0]
     results = [[],[],[]]
     for i in filter_inds:
-        results[0].append("face")
+        results[0].append(label)
         results[1].append(bboxes[i])
         results[2].append(segms[i])
 
