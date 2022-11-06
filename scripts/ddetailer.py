@@ -7,7 +7,7 @@ import gradio as gr
 
 from modules import processing, images
 from modules import scripts, script_callbacks, shared, devices, modelloader
-from modules.processing import Processed
+from modules.processing import Processed, StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img
 from modules.shared import opts, cmd_opts, state
 from modules.sd_models import model_hash
 from modules.paths import models_path
@@ -84,12 +84,12 @@ class DetectionDetailerScript(scripts.Script):
                 dd_model_a = gr.Dropdown(label="Primary detection model (A)", choices=model_list,value = "None", visible=True, type="value")
             
             with gr.Row():
-                dd_conf_a = gr.Slider(label='Detection confidence threshold % (A)', minimum=0, maximum=100, step=1, value=80, visible=False)
-                dd_dilation_factor_a = gr.Slider(label='Dilation factor (A)', minimum=0, maximum=255, step=1, value=1, visible=False)
+                dd_conf_a = gr.Slider(label='Detection confidence threshold % (A)', minimum=0, maximum=100, step=1, value=30, visible=False)
+                dd_dilation_factor_a = gr.Slider(label='Dilation factor (A)', minimum=0, maximum=255, step=1, value=4, visible=False)
             
             with gr.Row():
                 dd_preprocess_b = gr.Checkbox(label='Inpaint model B detections before model A runs', value=False, visible=False)
-                dd_bitwise_and_b = gr.Checkbox(label='Bitwise AND model A and B detections ', value=True, visible=False)  
+                dd_bitwise_and_b = gr.Checkbox(label='Bitwise AND model A and B detections ', value=False, visible=False)  
         
         br = gr.HTML("<br>")
 
@@ -98,17 +98,17 @@ class DetectionDetailerScript(scripts.Script):
                 dd_model_b = gr.Dropdown(label="Secondary detection model (B) (optional)", choices=model_list,value = "None", visible =False, type="value")
 
             with gr.Row():
-                dd_conf_b = gr.Slider(label='Detection confidence threshold % (B)', minimum=0, maximum=100, step=1, value=80, visible=False)
-                dd_dilation_factor_b = gr.Slider(label='Dilation factor (B)', minimum=0, maximum=255, step=1, value=1, visible=False)
+                dd_conf_b = gr.Slider(label='Detection confidence threshold % (B)', minimum=0, maximum=100, step=1, value=30, visible=False)
+                dd_dilation_factor_b = gr.Slider(label='Dilation factor (B)', minimum=0, maximum=255, step=1, value=4, visible=False)
         
         with gr.Group():
             with gr.Row():
-                dd_mask_blur = gr.Slider(label='Mask blur', minimum=0, maximum=64, step=1, value=4, visible=(not is_img2img))
-                dd_inpainting_fill = gr.Radio(label='Masked content', choices=['fill', 'original', 'latent noise', 'latent nothing'], value='original', type="index", visible=(not is_img2img))
+                dd_mask_blur = gr.Slider(label='Mask blur ', minimum=0, maximum=64, step=1, value=4, visible=(not is_img2img))
+                dd_denoising_strength = gr.Slider(label='Denoising strength (Inpaint)', minimum=0.0, maximum=1.0, step=0.01, value=0.4, visible=(not is_img2img))
             
             with gr.Row():
                 dd_inpaint_full_res = gr.Checkbox(label='Inpaint at full resolution ', value=True, visible = (not is_img2img))
-                dd_inpaint_full_res_padding = gr.Slider(label='Inpaint at full resolution padding, pixels', minimum=0, maximum=256, step=4, value=32, visible=(not is_img2img))
+                dd_inpaint_full_res_padding = gr.Slider(label='Inpaint at full resolution padding, pixels ', minimum=0, maximum=256, step=4, value=32, visible=(not is_img2img))
 
         dd_model_a.change(
             lambda modelname: {
@@ -139,7 +139,7 @@ class DetectionDetailerScript(scripts.Script):
                 br,
                 dd_model_b,
                 dd_conf_b, dd_dilation_factor_b,  
-                dd_mask_blur, dd_inpainting_fill,
+                dd_mask_blur, dd_denoising_strength,
                 dd_inpaint_full_res, dd_inpaint_full_res_padding
         ]
 
@@ -150,115 +150,153 @@ class DetectionDetailerScript(scripts.Script):
                      br,
                      dd_model_b,
                      dd_conf_b, dd_dilation_factor_b, 
-                     dd_mask_blur, dd_inpainting_fill,
+                     dd_mask_blur, dd_denoising_strength,
                      dd_inpaint_full_res, dd_inpaint_full_res_padding):
 
         processing.fix_seed(p)
         initial_info = None
         seed = p.seed
-        init_image = p.init_images[0]
         devices.torch_gc()
         p.batch_size = 1
         ddetail_count = p.n_iter
         p.n_iter = 1
-        p.mask_blur = dd_mask_blur
-        p.inpainting_fill = dd_inpainting_fill
-        p.inpaint_full_res = dd_inpaint_full_res
-        p.inpaint_full_res_padding = dd_inpaint_full_res_padding
         p.do_not_save_grid = True
         p.do_not_save_samples = True
-        masks_a = []
-        masks_b_pre = []
-        
-        # Optional secondary pre-processing run
-        if (dd_model_b != "None" and dd_preprocess_b):
-            label_b_pre = "B"
-            results_b_pre = inference(init_image, dd_model_b, dd_conf_b/100.0, label_b_pre)
-            masks_b_pre = create_segmasks(results_b_pre)
-            masks_b_pre = dilate_masks(masks_b_pre, dd_dilation_factor_b, 1)
-            if (len(masks_b_pre) > 0):
-                results_b_pre = update_result_masks(results_b_pre, masks_b_pre)
-                shared.state.current_image = create_segmask_preview(results_b_pre, init_image)
-                gen_count = len(masks_b_pre)
-                state.job_count = ddetail_count * gen_count
-                print(f"Processing {len(masks_b_pre)} model {label_b_pre} detections per output image for a total of {state.job_count} generation(s).")
-                for n in range(ddetail_count):
+        is_txt2img = isinstance(p, StableDiffusionProcessingTxt2Img)
+        if (not is_txt2img):
+            orig_image = p.init_images[0]
+        else:
+            p_txt = p
+            p = StableDiffusionProcessingImg2Img(
+                    init_images = None,
+                    resize_mode = 0,
+                    denoising_strength = dd_denoising_strength,
+                    mask = None,
+                    mask_blur= dd_mask_blur,
+                    inpainting_fill = 1,
+                    inpaint_full_res = dd_inpaint_full_res,
+                    inpaint_full_res_padding= dd_inpaint_full_res_padding,
+                    inpainting_mask_invert= 0,
+                    sd_model=p_txt.sd_model,
+                    outpath_samples=p_txt.outpath_samples,
+                    outpath_grids=p_txt.outpath_grids,
+                    prompt=p_txt.prompt,
+                    negative_prompt=p_txt.negative_prompt,
+                    styles=p_txt.styles,
+                    seed=p_txt.seed,
+                    subseed=p_txt.subseed,
+                    subseed_strength=p_txt.subseed_strength,
+                    seed_resize_from_h=p_txt.seed_resize_from_h,
+                    seed_resize_from_w=p_txt.seed_resize_from_w,
+                    sampler_index=p_txt.sampler_index,
+                    n_iter=p_txt.n_iter,
+                    steps=p_txt.steps,
+                    cfg_scale=p_txt.cfg_scale,
+                    width=p_txt.width,
+                    height=p_txt.height,
+                    tiling=p_txt.tiling,
+                )
+            p.do_not_save_grid = True
+            p.do_not_save_samples = True
+        output_images = []
+        for n in range(ddetail_count):
+            if ( is_txt2img ):
+                print(f"Processing initial image for output generation {n + 1}.")
+                start_seed = seed + n
+                p_txt.seed = start_seed
+                processed = processing.process_images(p_txt)
+                init_image = processed.images[0]   
+            else: 
+                init_image = orig_image
+            
+            output_images.append(init_image)
+            masks_a = []
+            masks_b_pre = []
+
+            # Optional secondary pre-processing run
+            if (dd_model_b != "None" and dd_preprocess_b): 
+                label_b_pre = "B"
+                results_b_pre = inference(init_image, dd_model_b, dd_conf_b/100.0, label_b_pre)
+                masks_b_pre = create_segmasks(results_b_pre)
+                masks_b_pre = dilate_masks(masks_b_pre, dd_dilation_factor_b, 1)
+                if (len(masks_b_pre) > 0):
+                    results_b_pre = update_result_masks(results_b_pre, masks_b_pre)
+                    shared.state.current_image = create_segmask_preview(results_b_pre, init_image)
+                    gen_count = len(masks_b_pre)
+                    state.job_count = gen_count
+                    print(f"Processing {gen_count} model {label_b_pre} detections for output generation {n + 1}.")
                     start_seed = seed + n
                     p.seed = start_seed
+                    p.init_images = [init_image]
 
                     for i in range(gen_count):
                         p.image_mask = masks_b_pre[i]
-                        state.job = f"Generation {i + 1 + n} out of {state.job_count}"
+                        state.job = f"Generation {i + 1} out of {state.job_count}"
                         processed = processing.process_images(p)
-                        if initial_info is None:
-                            initial_info = processed.info
                         p.seed = processed.seed + 1
                         p.init_images = processed.images
 
-                if opts.samples_save:
-                    images.save_image(processed.images[0], p.outpath_samples, "", start_seed, p.prompt, opts.samples_format, info=initial_info, p=p)
-            else:
-                print("No model B detections with current settings.")
+                    if (gen_count > 0):
+                        output_images[n] = processed.images[0]
+                        init_image = processed.images[0]
 
-        # Primary run
-        if (dd_model_a != "None"):
-            init_image = p.init_images[0]
-            label_a = "A"
-            if (dd_bitwise_and_b):
-                label_a = "A AND B"
-            results_a = inference(init_image, dd_model_a, dd_conf_a/100.0, label_a)
-            masks_a = create_segmasks(results_a)
-            masks_a = dilate_masks(masks_a, dd_dilation_factor_a, 1)
-            if (dd_model_b != "None" and dd_bitwise_and_b):
-                label_b = "B"
-                results_b = inference(init_image, dd_model_b, dd_conf_b/100.0, label_b)
-                masks_b = create_segmasks(results_b)
-                masks_b = dilate_masks(masks_b, dd_dilation_factor_b, 1)
-                if (len(masks_b) > 0):
-                    combined_mask_b = combine_masks(masks_b)
-                    for i in reversed(range(len(masks_a))):
-                        masks_a[i] = bitwise_and_masks(masks_a[i], combined_mask_b)
-                        masks_a[i].save("output" + str(i) + ".png", "PNG")
-                        if (is_allblack(masks_a[i])):
-                            del masks_a[i]
-                            for result in results_a:
-                                del result[i]
-                                
                 else:
-                    print("No model B detections to overlap with model A masks")
-                    results_a = []
-                    masks_a = []
-            
-            if (len(masks_a) > 0):
-                results_a = update_result_masks(results_a, masks_a)
-                shared.state.current_image = create_segmask_preview(results_a, init_image)
-                gen_count = len(masks_a)
-                state.job_count = ddetail_count * gen_count
-                print(f"Processing {len(masks_a)} model {label_a} detections per output image for a total of {state.job_count} generation(s).")
-                for n in range(ddetail_count):
+                    print(f"No model B detections for output generation {n} with current settings.")
+
+            # Primary run
+            if (dd_model_a != "None"):
+                label_a = "A"
+                if (dd_bitwise_and_b):
+                    label_a = "A&B"
+                results_a = inference(init_image, dd_model_a, dd_conf_a/100.0, label_a)
+                masks_a = create_segmasks(results_a)
+                masks_a = dilate_masks(masks_a, dd_dilation_factor_a, 1)
+                if (dd_model_b != "None" and dd_bitwise_and_b):
+                    label_b = "B"
+                    results_b = inference(init_image, dd_model_b, dd_conf_b/100.0, label_b)
+                    masks_b = create_segmasks(results_b)
+                    masks_b = dilate_masks(masks_b, dd_dilation_factor_b, 1)
+                    if (len(masks_b) > 0):
+                        combined_mask_b = combine_masks(masks_b)
+                        for i in reversed(range(len(masks_a))):
+                            masks_a[i] = bitwise_and_masks(masks_a[i], combined_mask_b)
+                            masks_a[i].save("output" + str(i) + ".png", "PNG")
+                            if (is_allblack(masks_a[i])):
+                                del masks_a[i]
+                                for result in results_a:
+                                    del result[i]
+                                    
+                    else:
+                        print("No model B detections to overlap with model A masks")
+                        results_a = []
+                        masks_a = []
+                
+                if (len(masks_a) > 0):
+                    results_a = update_result_masks(results_a, masks_a)
+                    shared.state.current_image = create_segmask_preview(results_a, init_image)
+                    gen_count = len(masks_a)
+                    state.job_count = gen_count
+                    print(f"Processing {gen_count} model {label_a} detections for output generation {n + 1}.")
                     start_seed = seed + n
                     p.seed = start_seed
+                    p.init_images = [init_image]
 
                     for i in range(gen_count):
                         p.image_mask = masks_a[i]
-                        state.job = f"Generation {i + 1 + n} out of {state.job_count}"
+                        state.job = f"Generation {i + 1} out of {state.job_count}"
                         processed = processing.process_images(p)
                         if initial_info is None:
                             initial_info = processed.info
                         p.seed = processed.seed + 1
                         p.init_images = processed.images
-                        
-                if opts.samples_save:
-                    images.save_image(processed.images[0], p.outpath_samples, "", start_seed, p.prompt, opts.samples_format, info=initial_info, p=p)
-            else: 
-                print("No model A detections with current settings")
-                
-        if ( len(masks_a) == 0 and len(masks_b_pre) == 0):
-            print("No detections to process")
-            output_images = p.init_images
-            initial_info = "No detections to process"
-        else:
-            output_images = processed.images
+                    
+                    if (gen_count > 0):
+                        output_images[n] = processed.images[0]
+
+                    if ( (n == ddetail_count - 1) and opts.samples_save ):
+                        images.save_image(processed.images[0], p.outpath_samples, "", start_seed, p.prompt, opts.samples_format, info=initial_info, p=p)
+                else: 
+                    print("No model {label_a} detections for output generation {n} with current settings.")
         
         return Processed(p, output_images, seed, initial_info)
 
@@ -308,7 +346,7 @@ def create_segmask_preview(results, image):
         score = bboxes[i][4]
         score = str(score)[:4]
         text = name + ":" + score
-        cv2.putText(cv2_image, text, (centroid_x - 30, centroid_y), cv2.FONT_HERSHEY_DUPLEX, 0.6, text_color, 1, cv2.LINE_AA)
+        cv2.putText(cv2_image, text, (centroid_x - 30, centroid_y), cv2.FONT_HERSHEY_DUPLEX, 0.4, text_color, 1, cv2.LINE_AA)
     
     if ( len(segms) > 0):
         preview_image = Image.fromarray(cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB))
