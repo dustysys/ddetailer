@@ -386,6 +386,14 @@ from mmdet.core import get_classes
 from mmdet.apis import (inference_detector,
                         init_detector)
 
+def get_device():
+    device_id = shared.cmd_opts.device_id
+    if device_id is not None:
+        cuda_device = f"cuda:{device_id}"
+    else:
+        cuda_device = "cpu"
+    return cuda_device
+
 def inference(image, modelname, conf_thres, label):
     path = modelpath(modelname)
     if ( "mmdet" in path and "bbox" in path ):
@@ -397,7 +405,7 @@ def inference(image, modelname, conf_thres, label):
 def inference_mmdet_segm(image, modelname, conf_thres, label):
     model_checkpoint = modelpath(modelname)
     model_config = os.path.splitext(model_checkpoint)[0] + ".py"
-    model_device = "cuda:0"
+    model_device = get_device()
     model = init_detector(model_config, model_checkpoint, device=model_device)
     mmdet_results = inference_detector(model, np.array(image))
     bbox_results, segm_results = mmdet_results
@@ -423,7 +431,7 @@ def inference_mmdet_segm(image, modelname, conf_thres, label):
 def inference_mmdet_bbox(image, modelname, conf_thres, label):
     model_checkpoint = modelpath(modelname)
     model_config = os.path.splitext(model_checkpoint)[0] + ".py"
-    model_device = "cuda:0"
+    model_device = get_device()
     model = init_detector(model_config, model_checkpoint, device=model_device)
     results = inference_detector(model, np.array(image))
     cv2_image = np.array(image)
