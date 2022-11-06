@@ -341,12 +341,10 @@ def createmaskpreview(masks, image):
 
     return preview_image
 
-# Checks if PIL mask is all black
 def isCompletelyBlack(mask):
     cv2_mask = np.array(mask)
     return cv2.countNonZero(cv2_mask) == 0
 
-# Bitwise AND two PIL masks
 def bitwiseANDmasks(mask1, mask2):
     cv2_mask1 = np.array(mask1)
     cv2_mask2 = np.array(mask2)
@@ -354,7 +352,6 @@ def bitwiseANDmasks(mask1, mask2):
     mask = Image.fromarray(cv2_mask)
     return mask
 
-# Expand masks
 def dilatemasks(masks, dilation_factor, iter=1):
     if dilation_factor == 0:
         return masks
@@ -366,7 +363,6 @@ def dilatemasks(masks, dilation_factor, iter=1):
         dilated_masks.append(Image.fromarray(dilated_mask))
     return dilated_masks
 
-# Bitwise OR array of PIL masks
 def combine_masks(masks):
     initial_cv2_mask = np.array(masks[0])
     combined_cv2_mask = initial_cv2_mask
@@ -380,7 +376,6 @@ def combine_masks(masks):
 def on_ui_settings():
     shared.opts.add_option("dd_same_seed", shared.OptionInfo(False, "Use same seed for all sub-images", section=("ddetailer", "Detection Detailer")))
 
-# Create masks from segmented objects
 def createsegmasks(results):
     segms = results[2]
     segmasks = []
@@ -399,7 +394,6 @@ def inference(image, modelname, conf_thres):
         results = inference_mmdet_segm(image, modelname, conf_thres)
     return results
 
-# Get results from mmdet segm model
 def inference_mmdet_segm(image, modelname, conf_thres):
     model_checkpoint = modelpath(modelname)
     model_config = os.path.splitext(model_checkpoint)[0] + ".py"
@@ -426,7 +420,6 @@ def inference_mmdet_segm(image, modelname, conf_thres):
 
     return results
 
-# Get results from mmdet face model
 def inference_mmdet_bbox(image, modelname, conf_thres):
     model_checkpoint = modelpath(modelname)
     model_config = os.path.splitext(model_checkpoint)[0] + ".py"
