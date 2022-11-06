@@ -1,20 +1,19 @@
 import os
-import cv2
 import sys
+import cv2
 from PIL import Image
 import numpy as np
 import gradio as gr
-
-from basicsr.utils.download_util import load_file_from_url
 
 from modules import processing, images
 from modules import scripts, script_callbacks, shared, devices, modelloader
 from modules.processing import Processed
 from modules.shared import opts, cmd_opts, state
 from modules.sd_models import model_hash
-from extensions.ddetailer.scripts.dd_test import testfn
+from modules.paths import models_path
+from basicsr.utils.download_util import load_file_from_url
 
-dd_model_list = "extensions/ddetailer/models"
+dd_models_path = os.path.join(models_path, "mmdet")
 
 def list_models(model_path):
         model_list = modelloader.load_models(model_path=model_path, ext_filter=[".pth"])
@@ -50,20 +49,16 @@ def startup():
         run(f'"{python}" -m mim install mmcv-full', desc=f"Installing mmcv-full", errdesc=f"Couldn't install mmcv-full")
         run(f'"{python}" -m pip install mmdet', desc=f"Installing mmdet", errdesc=f"Couldn't install mmdet")
 
-    if (len(list_models(dd_model_list)) == 0):
+    if (len(list_models(dd_models_path)) == 0):
         print("No detection models found, downloading...")
-        load_file_from_url("https://huggingface.co/dustysys/ddetailer/resolve/main/mmdet/bbox/mmdet_anime-face_yolov3.pth","extensions/ddetailer/models/mmdet/bbox")
-        load_file_from_url("https://huggingface.co/dustysys/ddetailer/raw/main/mmdet/bbox/mmdet_anime-face_yolov3.py","extensions/ddetailer/models/mmdet/bbox")
-        load_file_from_url("https://huggingface.co/dustysys/ddetailer/resolve/main/mmdet/segm/mmdet_dd-person_mask2former.pth","extensions/ddetailer/models/mmdet/segm")
-        load_file_from_url("https://huggingface.co/dustysys/ddetailer/raw/main/mmdet/segm/mmdet_dd-person_mask2former.py","extensions/ddetailer/models/mmdet/segm")
+        bbox_path = os.path.join(dd_models_path, "bbox")
+        segm_path = os.path.join(dd_models_path, "segm")
+        load_file_from_url("https://huggingface.co/dustysys/ddetailer/resolve/main/mmdet/bbox/mmdet_anime-face_yolov3.pth", bbox_path)
+        load_file_from_url("https://huggingface.co/dustysys/ddetailer/raw/main/mmdet/bbox/mmdet_anime-face_yolov3.py", bbox_path)
+        load_file_from_url("https://huggingface.co/dustysys/ddetailer/resolve/main/mmdet/segm/mmdet_dd-person_mask2former.pth", segm_path)
+        load_file_from_url("https://huggingface.co/dustysys/ddetailer/raw/main/mmdet/segm/mmdet_dd-person_mask2former.py", segm_path)
 
 startup()
-
-import mmcv
-from mmdet.core import get_classes
-from mmdet.apis import (inference_detector,
-                        init_detector)
-
 
 def gr_show(visible=True):
     return {"visible": visible, "__type__": "update"}
@@ -78,7 +73,7 @@ class DetectionDetailerScript(scripts.Script):
     def ui(self, is_img2img):
         import modules.ui
 
-        model_list = list_models(dd_model_list)
+        model_list = list_models(dd_models_path)
         model_list.insert(0, "None")
         if is_img2img:
             info = gr.HTML("<p style=\"margin-bottom:0.75em\">Recommended settings: Use from inpaint tab, inpaint at full res ON, denoise <0.5</p>")
@@ -271,7 +266,7 @@ def modeldataset(model_shortname):
     return dataset
 
 def modelpath(model_shortname):
-    model_list = modelloader.load_models(model_path=dd_model_list, ext_filter=[".pth"])
+    model_list = modelloader.load_models(model_path=dd_models_path, ext_filter=[".pth"])
     model_h = model_shortname.split("[")[-1].split("]")[0]
     for path in model_list:
         if ( model_hash(path) == model_h):
@@ -385,6 +380,11 @@ def createsegmasks(results):
         segmasks.append(mask)
 
     return segmasks
+
+import mmcv
+from mmdet.core import get_classes
+from mmdet.apis import (inference_detector,
+                        init_detector)
 
 def inference(image, modelname, conf_thres):
     path = modelpath(modelname)
