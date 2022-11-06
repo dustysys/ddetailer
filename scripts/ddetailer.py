@@ -89,7 +89,7 @@ class DetectionDetailerScript(scripts.Script):
             
             with gr.Row():
                 dd_preprocess_b = gr.Checkbox(label='Inpaint model B detections before model A runs', value=False, visible=False)
-                dd_bitwise_AND_b = gr.Checkbox(label='Bitwise AND model A and B detections ', value=True, visible=False)  
+                dd_bitwise_and_b = gr.Checkbox(label='Bitwise AND model A and B detections ', value=True, visible=False)  
         
         br = gr.HTML("<br>")
 
@@ -124,18 +124,18 @@ class DetectionDetailerScript(scripts.Script):
         dd_model_b.change(
             lambda modelname: {
                 dd_preprocess_b:gr_show( modelname != "None" ),
-                dd_bitwise_AND_b:gr_show( modelname != "None" ),
+                dd_bitwise_and_b:gr_show( modelname != "None" ),
                 dd_conf_b:gr_show( modelname != "None" ),
                 dd_dilation_factor_b:gr_show( modelname != "None")
             },
             inputs= [dd_model_b],
-            outputs =[dd_preprocess_b, dd_bitwise_AND_b, dd_conf_b, dd_dilation_factor_b]
+            outputs =[dd_preprocess_b, dd_bitwise_and_b, dd_conf_b, dd_dilation_factor_b]
         )
         
         return [info,
                 dd_model_a, 
                 dd_conf_a, dd_dilation_factor_a,
-                dd_preprocess_b, dd_bitwise_AND_b, 
+                dd_preprocess_b, dd_bitwise_and_b, 
                 br,
                 dd_model_b,
                 dd_conf_b, dd_dilation_factor_b,  
@@ -146,7 +146,7 @@ class DetectionDetailerScript(scripts.Script):
     def run(self, p, info,
                      dd_model_a, 
                      dd_conf_a, dd_dilation_factor_a,
-                     dd_preprocess_b, dd_bitwise_AND_b, 
+                     dd_preprocess_b, dd_bitwise_and_b, 
                      br,
                      dd_model_b,
                      dd_conf_b, dd_dilation_factor_b, 
@@ -173,11 +173,11 @@ class DetectionDetailerScript(scripts.Script):
         # Optional secondary pre-processing run
         if (dd_model_b != "None" and dd_preprocess_b):
             results_b_pre = inference(init_image, dd_model_b, dd_conf_b/100.0, "B")
-            masks_b_pre = createsegmasks(results_b_pre)
-            masks_b_pre = dilatemasks(masks_b_pre, dd_dilation_factor_b, 1)
+            masks_b_pre = create_segmasks(results_b_pre)
+            masks_b_pre = dilate_masks(masks_b_pre, dd_dilation_factor_b, 1)
             if (len(masks_b_pre) > 0):
-                results_b_pre = updateresultmasks(results_b_pre, masks_b_pre)
-                shared.state.current_image = createsegmaskpreview(results_b_pre, init_image)
+                results_b_pre = update_result_masks(results_b_pre, masks_b_pre)
+                shared.state.current_image = create_segmask_preview(results_b_pre, init_image)
                 gen_count = len(masks_b_pre)
                 state.job_count = ddetail_count * gen_count
                 print(f"Processing {len(masks_b_pre)} model B detections per output image for a total of {state.job_count} generation(s).")
@@ -203,18 +203,18 @@ class DetectionDetailerScript(scripts.Script):
         if (dd_model_a != "None"):
             init_image = p.init_images[0]
             results_a = inference(init_image, dd_model_a, dd_conf_a/100.0, "A")
-            masks_a = createsegmasks(results_a)
-            masks_a = dilatemasks(masks_a, dd_dilation_factor_a, 1)
-            if (dd_model_b != "None" and dd_bitwise_AND_b):
+            masks_a = create_segmasks(results_a)
+            masks_a = dilate_masks(masks_a, dd_dilation_factor_a, 1)
+            if (dd_model_b != "None" and dd_bitwise_and_b):
                 results_b = inference(init_image, dd_model_b, dd_conf_b/100.0, "B")
-                masks_b = createsegmasks(results_b)
-                masks_b = dilatemasks(masks_b, dd_dilation_factor_b, 1)
+                masks_b = create_segmasks(results_b)
+                masks_b = dilate_masks(masks_b, dd_dilation_factor_b, 1)
                 if (len(masks_b) > 0):
                     combined_mask_b = combine_masks(masks_b)
                     for i in reversed(range(len(masks_a))):
-                        masks_a[i] = bitwiseANDmasks(masks_a[i], combined_mask_b)
+                        masks_a[i] = bitwise_and_masks(masks_a[i], combined_mask_b)
                         masks_a[i].save("output" + str(i) + ".png", "PNG")
-                        if (isCompletelyBlack(masks_a[i])):
+                        if (is_allblack(masks_a[i])):
                             del masks_a[i]
                             for result in results_a:
                                 del result[i]
@@ -225,8 +225,8 @@ class DetectionDetailerScript(scripts.Script):
                     masks_a = []
             
             if (len(masks_a) > 0):
-                results_a = updateresultmasks(results_a, masks_a)
-                shared.state.current_image = createsegmaskpreview(results_a, init_image)
+                results_a = update_result_masks(results_a, masks_a)
+                shared.state.current_image = create_segmask_preview(results_a, init_image)
                 gen_count = len(masks_a)
                 state.job_count = ddetail_count * gen_count
                 print(f"Processing {len(masks_a)} model A detections per output image for a total of {state.job_count} generation(s).")
@@ -272,13 +272,13 @@ def modelpath(model_shortname):
         if ( model_hash(path) == model_h):
             return path
 
-def updateresultmasks(results, masks):
+def update_result_masks(results, masks):
     for i in range(len(masks)):
         boolmask = np.array(masks[i], dtype=bool)
         results[2][i] = boolmask
     return results
 
-def createsegmaskpreview(results, image):
+def create_segmask_preview(results, image):
 
     labels = results[0]
     bboxes = results[1]
@@ -312,42 +312,18 @@ def createsegmaskpreview(results, image):
 
     return preview_image
 
-def createmaskpreview(masks, image):
-    cv2_image = np.array(image)
-    cv2_image = cv2_image[:, :, ::-1].copy()
-    for i in range(len(masks)):
-        color = np.full_like(cv2_image, np.random.randint(100, 256, (1, 3), dtype=np.uint8))
-        alpha = 0.2
-        color_image = cv2.addWeighted(cv2_image, alpha, color, 1-alpha, 0)
-        cv2_mask = np.array(masks[i])
-        cv2_mask_bool = np.array(masks[i], dtype=bool)
-        centroid = np.mean(np.argwhere(cv2_mask_bool),axis=0)
-        centroid_x, centroid_y = int(centroid[1]), int(centroid[0])
-
-        cv2_mask_rgb = cv2.merge((cv2_mask, cv2_mask, cv2_mask))
-        cv2_image = np.where(cv2_mask_rgb == 255, color_image, cv2_image)
-        text_color = tuple([int(x) for x in ( color[0][0] - 100 )])
-        cv2.putText(cv2_image, 'Face', (centroid_x - 30, centroid_y), cv2.FONT_HERSHEY_DUPLEX, 0.6, text_color, 1, cv2.LINE_AA)
-
-    if (len(masks) > 0):
-        preview_image = Image.fromarray(cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB))
-    else:
-        preview_image = image
-
-    return preview_image
-
-def isCompletelyBlack(mask):
+def is_allblack(mask):
     cv2_mask = np.array(mask)
     return cv2.countNonZero(cv2_mask) == 0
 
-def bitwiseANDmasks(mask1, mask2):
+def bitwise_and_masks(mask1, mask2):
     cv2_mask1 = np.array(mask1)
     cv2_mask2 = np.array(mask2)
     cv2_mask = cv2.bitwise_and(cv2_mask1, cv2_mask2)
     mask = Image.fromarray(cv2_mask)
     return mask
 
-def dilatemasks(masks, dilation_factor, iter=1):
+def dilate_masks(masks, dilation_factor, iter=1):
     if dilation_factor == 0:
         return masks
     dilated_masks = []
@@ -371,7 +347,7 @@ def combine_masks(masks):
 def on_ui_settings():
     shared.opts.add_option("dd_same_seed", shared.OptionInfo(False, "Use same seed for all sub-images", section=("ddetailer", "Detection Detailer")))
 
-def createsegmasks(results):
+def create_segmasks(results):
     segms = results[2]
     segmasks = []
     for i in range(len(segms)):
