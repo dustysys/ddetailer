@@ -14,7 +14,7 @@ With full-resolution inpainting, the extension is handy for improving faces with
 ![zion](/misc/ddetailer_example_3.gif)
 
 ## Installation
-1. Use `git clone https://github.com/dustysys/ddetailer.git` from your SD web UI `/extensions` folder.
+1. Use `git clone https://github.com/dustysys/ddetailer.git` from your SD web UI `/extensions` folder. Alternatively, install from the extensions tab with url `https://github.com/dustysys/ddetailer`
 2. Start or reload SD web UI.
 
 The models and dependencies should download automatically. To install them manually, follow the [official instructions for installing mmdet](https://mmcv.readthedocs.io/en/latest/get_started/installation.html#install-with-mim-recommended). The models can be [downloaded here](https://huggingface.co/dustysys/ddetailer) and should be placed in `/models/mmdet/bbox` for bounding box (`anime-face_yolov3`) or `/models/mmdet/segm` for instance segmentation models (`dd-person_mask2former`). See the [MMDetection docs](https://mmdetection.readthedocs.io/en/latest/1_exist_data_model.html) for guidance on training your own models.
