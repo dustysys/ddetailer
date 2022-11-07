@@ -200,9 +200,9 @@ class DetectionDetailerScript(scripts.Script):
             p.do_not_save_samples = True
         output_images = []
         for n in range(ddetail_count):
+            start_seed = seed + n
             if ( is_txt2img ):
                 print(f"Processing initial image for output generation {n + 1}.")
-                start_seed = seed + n
                 p_txt.seed = start_seed
                 processed = processing.process_images(p_txt)
                 init_image = processed.images[0]   
@@ -221,16 +221,20 @@ class DetectionDetailerScript(scripts.Script):
                 masks_b_pre = dilate_masks(masks_b_pre, dd_dilation_factor_b, 1)
                 if (len(masks_b_pre) > 0):
                     results_b_pre = update_result_masks(results_b_pre, masks_b_pre)
-                    shared.state.current_image = create_segmask_preview(results_b_pre, init_image)
+                    segmask_preview_b = create_segmask_preview(results_b_pre, init_image)
+                    shared.state.current_image = segmask_preview_b
+                    if ( opts.dd_save_previews):
+                        images.save_image(segmask_preview_b, opts.outdir_ddetailer_previews, "", start_seed, p.prompt, opts.samples_format, p=p)
                     gen_count = len(masks_b_pre)
                     state.job_count = gen_count
                     print(f"Processing {gen_count} model {label_b_pre} detections for output generation {n + 1}.")
-                    start_seed = seed + n
                     p.seed = start_seed
                     p.init_images = [init_image]
 
                     for i in range(gen_count):
                         p.image_mask = masks_b_pre[i]
+                        if ( opts.dd_save_masks):
+                            images.save_image(masks_b_pre[i], opts.outdir_ddetailer_masks, "", start_seed, p.prompt, opts.samples_format, p=p)
                         state.job = f"Generation {i + 1} out of {state.job_count}"
                         processed = processing.process_images(p)
                         p.seed = processed.seed + 1
@@ -260,7 +264,6 @@ class DetectionDetailerScript(scripts.Script):
                         combined_mask_b = combine_masks(masks_b)
                         for i in reversed(range(len(masks_a))):
                             masks_a[i] = bitwise_and_masks(masks_a[i], combined_mask_b)
-                            masks_a[i].save("output" + str(i) + ".png", "PNG")
                             if (is_allblack(masks_a[i])):
                                 del masks_a[i]
                                 for result in results_a:
@@ -273,16 +276,20 @@ class DetectionDetailerScript(scripts.Script):
                 
                 if (len(masks_a) > 0):
                     results_a = update_result_masks(results_a, masks_a)
-                    shared.state.current_image = create_segmask_preview(results_a, init_image)
+                    segmask_preview_a = create_segmask_preview(results_a, init_image)
+                    shared.state.current_image = segmask_preview_a
+                    if ( opts.dd_save_previews):
+                        images.save_image(segmask_preview_a, opts.outdir_ddetailer_previews, "", start_seed, p.prompt, opts.samples_format, p=p)
                     gen_count = len(masks_a)
                     state.job_count = gen_count
                     print(f"Processing {gen_count} model {label_a} detections for output generation {n + 1}.")
-                    start_seed = seed + n
                     p.seed = start_seed
                     p.init_images = [init_image]
 
                     for i in range(gen_count):
                         p.image_mask = masks_a[i]
+                        if ( opts.dd_save_masks):
+                            images.save_image(masks_a[i], opts.outdir_ddetailer_masks, "", start_seed, p.prompt, opts.samples_format, p=p)
                         state.job = f"Generation {i + 1} out of {state.job_count}"
                         processed = processing.process_images(p)
                         if initial_info is None:
@@ -292,9 +299,9 @@ class DetectionDetailerScript(scripts.Script):
                     
                     if (gen_count > 0):
                         output_images[n] = processed.images[0]
-
-                    if ( (n == ddetail_count - 1) and opts.samples_save ):
-                        images.save_image(processed.images[0], p.outpath_samples, "", start_seed, p.prompt, opts.samples_format, info=initial_info, p=p)
+                        if ( opts.samples_save ):
+                            images.save_image(processed.images[0], p.outpath_samples, "", start_seed, p.prompt, opts.samples_format, info=initial_info, p=p)
+  
                 else: 
                     print("No model {label_a} detections for output generation {n} with current settings.")
         
@@ -322,7 +329,6 @@ def update_result_masks(results, masks):
     return results
 
 def create_segmask_preview(results, image):
-
     labels = results[0]
     bboxes = results[1]
     segms = results[2]
@@ -388,7 +394,10 @@ def combine_masks(masks):
     return combined_mask
 
 def on_ui_settings():
-    shared.opts.add_option("dd_same_seed", shared.OptionInfo(False, "Use same seed for all sub-images", section=("ddetailer", "Detection Detailer")))
+    shared.opts.add_option("dd_save_previews", shared.OptionInfo(False, "Save mask previews", section=("ddetailer", "Detection Detailer")))
+    shared.opts.add_option("outdir_ddetailer_previews", shared.OptionInfo("extensions/ddetailer/outputs/masks-previews", 'Output directory for mask previews', section=("ddetailer", "Detection Detailer")))
+    shared.opts.add_option("dd_save_masks", shared.OptionInfo(False, "Save masks", section=("ddetailer", "Detection Detailer")))
+    shared.opts.add_option("outdir_ddetailer_masks", shared.OptionInfo("extensions/ddetailer/outputs/masks", 'Output directory for masks', section=("ddetailer", "Detection Detailer")))
 
 def create_segmasks(results):
     segms = results[2]
