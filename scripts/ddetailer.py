@@ -214,6 +214,7 @@ class DetectionDetailerScript(scripts.Script):
             p.do_not_save_grid = True
             p.do_not_save_samples = True
         output_images = []
+        state.job_count = ddetail_count
         for n in range(ddetail_count):
             devices.torch_gc()
             start_seed = seed + n
@@ -243,7 +244,7 @@ class DetectionDetailerScript(scripts.Script):
                     if ( opts.dd_save_previews):
                         images.save_image(segmask_preview_b, opts.outdir_ddetailer_previews, "", start_seed, p.prompt, opts.samples_format, p=p)
                     gen_count = len(masks_b_pre)
-                    state.job_count = gen_count
+                    state.job_count += gen_count
                     print(f"Processing {gen_count} model {label_b_pre} detections for output generation {n + 1}.")
                     p.seed = start_seed
                     p.init_images = [init_image]
@@ -252,7 +253,6 @@ class DetectionDetailerScript(scripts.Script):
                         p.image_mask = masks_b_pre[i]
                         if ( opts.dd_save_masks):
                             images.save_image(masks_b_pre[i], opts.outdir_ddetailer_masks, "", start_seed, p.prompt, opts.samples_format, p=p)
-                        state.job = f"Generation {i + 1} out of {state.job_count}"
                         processed = processing.process_images(p)
                         p.seed = processed.seed + 1
                         p.init_images = processed.images
@@ -300,7 +300,7 @@ class DetectionDetailerScript(scripts.Script):
                     if ( opts.dd_save_previews):
                         images.save_image(segmask_preview_a, opts.outdir_ddetailer_previews, "", start_seed, p.prompt, opts.samples_format, p=p)
                     gen_count = len(masks_a)
-                    state.job_count = gen_count
+                    state.job_count += gen_count
                     print(f"Processing {gen_count} model {label_a} detections for output generation {n + 1}.")
                     p.seed = start_seed
                     p.init_images = [init_image]
@@ -309,7 +309,7 @@ class DetectionDetailerScript(scripts.Script):
                         p.image_mask = masks_a[i]
                         if ( opts.dd_save_masks):
                             images.save_image(masks_a[i], opts.outdir_ddetailer_masks, "", start_seed, p.prompt, opts.samples_format, p=p)
-                        state.job = f"Generation {i + 1} out of {state.job_count}"
+                        
                         processed = processing.process_images(p)
                         if initial_info is None:
                             initial_info = processed.info
@@ -323,7 +323,10 @@ class DetectionDetailerScript(scripts.Script):
   
                 else: 
                     print("No model {label_a} detections for output generation {n} with current settings.")
-        
+            state.job = f"Generation {n + 1} out of {state.job_count}"
+        if (initial_info is None):
+            initial_info = "No detections found."
+
         return Processed(p, output_images, seed, initial_info)
 
 def modeldataset(model_shortname):
@@ -408,7 +411,6 @@ def offset_masks(masks, offset_x, offset_y):
     offset_masks = []
     for i in range(len(masks)):
         cv2_mask = np.array(masks[i])
-        h, w = cv2_mask.shape
         offset_mask = cv2_mask.copy()
         offset_mask = np.roll(offset_mask, -offset_y, axis=0)
         offset_mask = np.roll(offset_mask, offset_x, axis=1)
@@ -476,7 +478,9 @@ def inference_mmdet_segm(image, modelname, conf_thres, label):
         np.full(bbox.shape[0], i, dtype=np.int32)
         for i, bbox in enumerate(bbox_results)
     ]
-
+    n,m = bbox_results[0].shape
+    if (n == 0):
+        return [[],[],[]]
     labels = np.concatenate(labels)
     bboxes = np.vstack(bbox_results)
     segms = mmcv.concat_list(segm_results)
@@ -505,7 +509,10 @@ def inference_mmdet_bbox(image, modelname, conf_thres, label):
         cv2.rectangle(cv2_mask, (int(x0), int(y0)), (int(x1), int(y1)), 255, -1)
         cv2_mask_bool = cv2_mask.astype(bool)
         segms.append(cv2_mask_bool)
-
+    
+    n,m = results[0].shape
+    if (n == 0):
+        return [[],[],[]]
     bboxes = np.vstack(results[0])
     filter_inds = np.where(bboxes[:,-1] > conf_thres)[0]
     results = [[],[],[]]
