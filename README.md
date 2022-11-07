@@ -1,5 +1,5 @@
 # Detection Detailer
-An object detection and auto-mask extension for [Stable Diffusion web UI](https://github.com/AUTOMATIC1111/stable-diffusion-webui). See [Installation](https://github.com/dustysys/ddetailer/README.md#installation).
+An object detection and auto-mask extension for [Stable Diffusion web UI](https://github.com/AUTOMATIC1111/stable-diffusion-webui). See [Installation](https://github.com/dustysys/ddetailer#installation).
 
 ![adoringfan](/misc/ddetailer_example_1.png)
 
@@ -26,7 +26,7 @@ Select Detection Detailer as the script in SD web UI to use the extension. Here 
 - The script is available in txt2img mode as well and can improve the quality of your 10 pulls with moderate settings.
 
 ## Credits
-hysts/[anime-face-detector](https://github.com/hysts/anime-face-detector) - Creater of `anime-face_yolov3`, which has impressive performance on a variety of art styles.
+hysts/[anime-face-detector](https://github.com/hysts/anime-face-detector) - Creator of `anime-face_yolov3`, which has impressive performance on a variety of art styles.
 
 skytnt/[anime-seg](https://huggingface.co/skytnt/anime-seg) - Synthetic dataset used to train `dd-person_mask2former`.
 
