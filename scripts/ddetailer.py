@@ -37,7 +37,7 @@ def list_models(model_path):
         for filename in model_list:
             h = model_hash(filename)
             title, short_model_name = modeltitle(filename, h)
-            models.append(short_model_name + "[" + h + "]")
+            models.append(title)
         
         return models
 
@@ -86,6 +86,10 @@ class DetectionDetailerScript(scripts.Script):
             with gr.Row():
                 dd_conf_a = gr.Slider(label='Detection confidence threshold % (A)', minimum=0, maximum=100, step=1, value=30, visible=False)
                 dd_dilation_factor_a = gr.Slider(label='Dilation factor (A)', minimum=0, maximum=255, step=1, value=4, visible=False)
+
+            with gr.Row():
+                dd_offset_x_a = gr.Slider(label='X offset (A)', minimum=-200, maximum=200, step=1, value=0, visible=False)
+                dd_offset_y_a = gr.Slider(label='Y offset (A)', minimum=-200, maximum=200, step=1, value=0, visible=False)
             
             with gr.Row():
                 dd_preprocess_b = gr.Checkbox(label='Inpaint model B detections before model A runs', value=False, visible=False)
@@ -100,6 +104,10 @@ class DetectionDetailerScript(scripts.Script):
             with gr.Row():
                 dd_conf_b = gr.Slider(label='Detection confidence threshold % (B)', minimum=0, maximum=100, step=1, value=30, visible=False)
                 dd_dilation_factor_b = gr.Slider(label='Dilation factor (B)', minimum=0, maximum=255, step=1, value=4, visible=False)
+            
+            with gr.Row():
+                dd_offset_x_b = gr.Slider(label='X offset (B)', minimum=-200, maximum=200, step=1, value=0, visible=False)
+                dd_offset_y_b = gr.Slider(label='Y offset (B)', minimum=-200, maximum=200, step=1, value=0, visible=False)
         
         with gr.Group():
             with gr.Row():
@@ -114,11 +122,13 @@ class DetectionDetailerScript(scripts.Script):
             lambda modelname: {
                 dd_model_b:gr_show( modelname != "None" ),
                 dd_conf_a:gr_show( modelname != "None" ),
-                dd_dilation_factor_a:gr_show( modelname != "None")
+                dd_dilation_factor_a:gr_show( modelname != "None"),
+                dd_offset_x_a:gr_show( modelname != "None" ),
+                dd_offset_y_a:gr_show( modelname != "None" )
 
             },
             inputs= [dd_model_a],
-            outputs =[dd_model_b, dd_conf_a, dd_dilation_factor_a]
+            outputs =[dd_model_b, dd_conf_a, dd_dilation_factor_a, dd_offset_x_a, dd_offset_y_a]
         )
 
         dd_model_b.change(
@@ -126,19 +136,23 @@ class DetectionDetailerScript(scripts.Script):
                 dd_preprocess_b:gr_show( modelname != "None" ),
                 dd_bitwise_and_b:gr_show( modelname != "None" ),
                 dd_conf_b:gr_show( modelname != "None" ),
-                dd_dilation_factor_b:gr_show( modelname != "None")
+                dd_dilation_factor_b:gr_show( modelname != "None"),
+                dd_offset_x_b:gr_show( modelname != "None" ),
+                dd_offset_y_b:gr_show( modelname != "None" )
             },
             inputs= [dd_model_b],
-            outputs =[dd_preprocess_b, dd_bitwise_and_b, dd_conf_b, dd_dilation_factor_b]
+            outputs =[dd_preprocess_b, dd_bitwise_and_b, dd_conf_b, dd_dilation_factor_b, dd_offset_x_b, dd_offset_y_b]
         )
         
         return [info,
                 dd_model_a, 
                 dd_conf_a, dd_dilation_factor_a,
+                dd_offset_x_a, dd_offset_y_a,
                 dd_preprocess_b, dd_bitwise_and_b, 
                 br,
                 dd_model_b,
-                dd_conf_b, dd_dilation_factor_b,  
+                dd_conf_b, dd_dilation_factor_b,
+                dd_offset_x_b, dd_offset_y_b,  
                 dd_mask_blur, dd_denoising_strength,
                 dd_inpaint_full_res, dd_inpaint_full_res_padding
         ]
@@ -146,17 +160,18 @@ class DetectionDetailerScript(scripts.Script):
     def run(self, p, info,
                      dd_model_a, 
                      dd_conf_a, dd_dilation_factor_a,
+                     dd_offset_x_a, dd_offset_y_a,
                      dd_preprocess_b, dd_bitwise_and_b, 
                      br,
                      dd_model_b,
-                     dd_conf_b, dd_dilation_factor_b, 
+                     dd_conf_b, dd_dilation_factor_b,
+                     dd_offset_x_b, dd_offset_y_b,  
                      dd_mask_blur, dd_denoising_strength,
                      dd_inpaint_full_res, dd_inpaint_full_res_padding):
 
         processing.fix_seed(p)
         initial_info = None
         seed = p.seed
-        devices.torch_gc()
         p.batch_size = 1
         ddetail_count = p.n_iter
         p.n_iter = 1
@@ -200,6 +215,7 @@ class DetectionDetailerScript(scripts.Script):
             p.do_not_save_samples = True
         output_images = []
         for n in range(ddetail_count):
+            devices.torch_gc()
             start_seed = seed + n
             if ( is_txt2img ):
                 print(f"Processing initial image for output generation {n + 1}.")
@@ -219,6 +235,7 @@ class DetectionDetailerScript(scripts.Script):
                 results_b_pre = inference(init_image, dd_model_b, dd_conf_b/100.0, label_b_pre)
                 masks_b_pre = create_segmasks(results_b_pre)
                 masks_b_pre = dilate_masks(masks_b_pre, dd_dilation_factor_b, 1)
+                masks_b_pre = offset_masks(masks_b_pre,dd_offset_x_b, dd_offset_y_b)
                 if (len(masks_b_pre) > 0):
                     results_b_pre = update_result_masks(results_b_pre, masks_b_pre)
                     segmask_preview_b = create_segmask_preview(results_b_pre, init_image)
@@ -255,11 +272,13 @@ class DetectionDetailerScript(scripts.Script):
                 results_a = inference(init_image, dd_model_a, dd_conf_a/100.0, label_a)
                 masks_a = create_segmasks(results_a)
                 masks_a = dilate_masks(masks_a, dd_dilation_factor_a, 1)
+                masks_a = offset_masks(masks_a,dd_offset_x_a, dd_offset_y_a)
                 if (dd_model_b != "None" and dd_bitwise_and_b):
                     label_b = "B"
                     results_b = inference(init_image, dd_model_b, dd_conf_b/100.0, label_b)
                     masks_b = create_segmasks(results_b)
                     masks_b = dilate_masks(masks_b, dd_dilation_factor_b, 1)
+                    masks_b = offset_masks(masks_b,dd_offset_x_b, dd_offset_y_b)
                     if (len(masks_b) > 0):
                         combined_mask_b = combine_masks(masks_b)
                         for i in reversed(range(len(masks_a))):
@@ -382,6 +401,20 @@ def dilate_masks(masks, dilation_factor, iter=1):
         dilated_mask = cv2.dilate(cv2_mask, kernel, iter)
         dilated_masks.append(Image.fromarray(dilated_mask))
     return dilated_masks
+
+def offset_masks(masks, offset_x, offset_y):
+    if (offset_x == 0 and offset_y == 0):
+        return masks
+    offset_masks = []
+    for i in range(len(masks)):
+        cv2_mask = np.array(masks[i])
+        h, w = cv2_mask.shape
+        offset_mask = cv2_mask.copy()
+        offset_mask = np.roll(offset_mask, -offset_y, axis=0)
+        offset_mask = np.roll(offset_mask, offset_x, axis=1)
+        
+        offset_masks.append(Image.fromarray(offset_mask))
+    return offset_masks
 
 def combine_masks(masks):
     initial_cv2_mask = np.array(masks[0])
