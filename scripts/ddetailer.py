@@ -267,7 +267,7 @@ class DetectionDetailerScript(scripts.Script):
             # Primary run
             if (dd_model_a != "None"):
                 label_a = "A"
-                if (dd_bitwise_and_b):
+                if (dd_model_b != "None" and dd_bitwise_and_b):
                     label_a = "A&B"
                 results_a = inference(init_image, dd_model_a, dd_conf_a/100.0, label_a)
                 masks_a = create_segmasks(results_a)
