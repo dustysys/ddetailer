@@ -93,7 +93,7 @@ class DetectionDetailerScript(scripts.Script):
             
             with gr.Row():
                 dd_preprocess_b = gr.Checkbox(label='Inpaint model B detections before model A runs', value=False, visible=False)
-                dd_bitwise_and_b = gr.Checkbox(label='Bitwise AND model A and B detections ', value=False, visible=False)  
+                dd_bitwise_op = gr.Radio(label='Bitwise operation', choices=['None', 'A&B', 'A|B', 'A-B'], value="None", visible=False)  
         
         br = gr.HTML("<br>")
 
@@ -134,21 +134,21 @@ class DetectionDetailerScript(scripts.Script):
         dd_model_b.change(
             lambda modelname: {
                 dd_preprocess_b:gr_show( modelname != "None" ),
-                dd_bitwise_and_b:gr_show( modelname != "None" ),
+                dd_bitwise_op:gr_show( modelname != "None" ),
                 dd_conf_b:gr_show( modelname != "None" ),
                 dd_dilation_factor_b:gr_show( modelname != "None"),
                 dd_offset_x_b:gr_show( modelname != "None" ),
                 dd_offset_y_b:gr_show( modelname != "None" )
             },
             inputs= [dd_model_b],
-            outputs =[dd_preprocess_b, dd_bitwise_and_b, dd_conf_b, dd_dilation_factor_b, dd_offset_x_b, dd_offset_y_b]
+            outputs =[dd_preprocess_b, dd_bitwise_op, dd_conf_b, dd_dilation_factor_b, dd_offset_x_b, dd_offset_y_b]
         )
         
         return [info,
                 dd_model_a, 
                 dd_conf_a, dd_dilation_factor_a,
                 dd_offset_x_a, dd_offset_y_a,
-                dd_preprocess_b, dd_bitwise_and_b, 
+                dd_preprocess_b, dd_bitwise_op, 
                 br,
                 dd_model_b,
                 dd_conf_b, dd_dilation_factor_b,
@@ -161,7 +161,7 @@ class DetectionDetailerScript(scripts.Script):
                      dd_model_a, 
                      dd_conf_a, dd_dilation_factor_a,
                      dd_offset_x_a, dd_offset_y_a,
-                     dd_preprocess_b, dd_bitwise_and_b, 
+                     dd_preprocess_b, dd_bitwise_op, 
                      br,
                      dd_model_b,
                      dd_conf_b, dd_dilation_factor_b,
@@ -267,13 +267,13 @@ class DetectionDetailerScript(scripts.Script):
             # Primary run
             if (dd_model_a != "None"):
                 label_a = "A"
-                if (dd_model_b != "None" and dd_bitwise_and_b):
-                    label_a = "A&B"
+                if (dd_model_b != "None" and dd_bitwise_op != "None"):
+                    label_a = dd_bitwise_op
                 results_a = inference(init_image, dd_model_a, dd_conf_a/100.0, label_a)
                 masks_a = create_segmasks(results_a)
                 masks_a = dilate_masks(masks_a, dd_dilation_factor_a, 1)
                 masks_a = offset_masks(masks_a,dd_offset_x_a, dd_offset_y_a)
-                if (dd_model_b != "None" and dd_bitwise_and_b):
+                if (dd_model_b != "None" and dd_bitwise_op != "None"):
                     label_b = "B"
                     results_b = inference(init_image, dd_model_b, dd_conf_b/100.0, label_b)
                     masks_b = create_segmasks(results_b)
@@ -282,7 +282,12 @@ class DetectionDetailerScript(scripts.Script):
                     if (len(masks_b) > 0):
                         combined_mask_b = combine_masks(masks_b)
                         for i in reversed(range(len(masks_a))):
-                            masks_a[i] = bitwise_and_masks(masks_a[i], combined_mask_b)
+                            if (dd_bitwise_op == "A&B"):
+                                masks_a[i] = bitwise_and_masks(masks_a[i], combined_mask_b)
+                            elif (dd_bitwise_op == "A-B"):
+                                masks_a[i] = subtract_masks(masks_a[i], combined_mask_b)
+                            elif (dd_bitwise_op == "A|B"):
+                                masks_a[i] = combine_masks([masks_a[i], combined_mask_b])
                             if (is_allblack(masks_a[i])):
                                 del masks_a[i]
                                 for result in results_a:
@@ -391,6 +396,13 @@ def bitwise_and_masks(mask1, mask2):
     cv2_mask1 = np.array(mask1)
     cv2_mask2 = np.array(mask2)
     cv2_mask = cv2.bitwise_and(cv2_mask1, cv2_mask2)
+    mask = Image.fromarray(cv2_mask)
+    return mask
+
+def subtract_masks(mask1, mask2):
+    cv2_mask1 = np.array(mask1)
+    cv2_mask2 = np.array(mask2)
+    cv2_mask = cv2.subtract(cv2_mask1, cv2_mask2)
     mask = Image.fromarray(cv2_mask)
     return mask
 
