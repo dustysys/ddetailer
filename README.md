@@ -23,12 +23,12 @@ The models and dependencies should download automatically. To install them manua
 Select Detection Detailer as the script in SD web UI to use the extension. Here are some tips:
 - `anime-face_yolov3` can detect the bounding box of faces as the primary model while `dd-person_mask2former` isolates the head's silhouette as the secondary model by using the bitwise AND option.
 - The dilation factor expands the mask, while the x & y offsets move the mask around.
-- The script is available in txt2img mode as well and can improve the quality of your 10 pulls with moderate settings.
+- The script is available in txt2img mode as well and can improve the quality of your 10 pulls with moderate settings (low denoise).
 
 ## Credits
 hysts/[anime-face-detector](https://github.com/hysts/anime-face-detector) - Creator of `anime-face_yolov3`, which has impressive performance on a variety of art styles.
 
-skytnt/[anime-seg](https://huggingface.co/skytnt/anime-seg) - Synthetic dataset used to train `dd-person_mask2former`.
+skytnt/[anime-segmentation](https://huggingface.co/datasets/skytnt/anime-segmentation) - Synthetic dataset used to train `dd-person_mask2former`.
 
 jerryli27/[AniSeg](https://github.com/jerryli27/AniSeg) - Annotated dataset used to train `dd-person_mask2former`.
 
