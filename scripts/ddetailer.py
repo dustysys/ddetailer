@@ -93,7 +93,7 @@ class DetectionDetailerScript(scripts.Script):
             
             with gr.Row():
                 dd_preprocess_b = gr.Checkbox(label='Inpaint model B detections before model A runs', value=False, visible=False)
-                dd_bitwise_op = gr.Radio(label='Bitwise operation', choices=['None', 'A&B', 'A|B', 'A-B'], value="None", visible=False)  
+                dd_bitwise_op = gr.Radio(label='Bitwise operation', choices=['None', 'A&B', 'A-B'], value="None", visible=False)  
         
         br = gr.HTML("<br>")
 
@@ -286,8 +286,6 @@ class DetectionDetailerScript(scripts.Script):
                                 masks_a[i] = bitwise_and_masks(masks_a[i], combined_mask_b)
                             elif (dd_bitwise_op == "A-B"):
                                 masks_a[i] = subtract_masks(masks_a[i], combined_mask_b)
-                            elif (dd_bitwise_op == "A|B"):
-                                masks_a[i] = combine_masks([masks_a[i], combined_mask_b])
                             if (is_allblack(masks_a[i])):
                                 del masks_a[i]
                                 for result in results_a:
