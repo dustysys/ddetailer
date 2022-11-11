@@ -17,11 +17,11 @@ With full-resolution inpainting, the extension is handy for improving faces with
 1. Use `git clone https://github.com/dustysys/ddetailer.git` from your SD web UI `/extensions` folder. Alternatively, install from the extensions tab with url `https://github.com/dustysys/ddetailer`
 2. Start or reload SD web UI.
 
-The models and dependencies should download automatically. To install them manually, follow the [official instructions for installing mmdet](https://mmcv.readthedocs.io/en/latest/get_started/installation.html#install-with-mim-recommended). The models can be [downloaded here](https://huggingface.co/dustysys/ddetailer) and should be placed in `/models/mmdet/bbox` for bounding box (`anime-face_yolov3`) or `/models/mmdet/segm` for instance segmentation models (`dd-person_mask2former`). See the [MMDetection docs](https://mmdetection.readthedocs.io/en/latest/1_exist_data_model.html) for guidance on training your own models. See [Troubleshooting](https://github.com/dustysys/ddetailer#troubleshooting) if you encounter issues during installation.
+The models and dependencies should download automatically. To install them manually, follow the [official instructions for installing mmdet](https://mmcv.readthedocs.io/en/latest/get_started/installation.html#install-with-mim-recommended). The models can be [downloaded here](https://huggingface.co/dustysys/ddetailer) and should be placed in `/models/mmdet/bbox` for bounding box (`anime-face_yolov3`) or `/models/mmdet/segm` for instance segmentation models (`dd-person_mask2former`). See the [MMDetection docs](https://mmdetection.readthedocs.io/en/latest/1_exist_data_model.html) for guidance on training your own models. For using official MMDetection pretrained models see [here](https://github.com/dustysys/ddetailer/issues/5#issuecomment-1311231989), these are trained for photorealism. See [Troubleshooting](https://github.com/dustysys/ddetailer#troubleshooting) if you encounter issues during installation.
 
 ## Usage
-Select Detection Detailer as the script in SD web UI to use the extension. Here are some tips:
-- `anime-face_yolov3` can detect the bounding box of faces as the primary model while `dd-person_mask2former` isolates the head's silhouette as the secondary model by using the bitwise AND option.
+Select Detection Detailer as the script in SD web UI to use the extension. Click 'Generate' to run the script. Here are some tips:
+- `anime-face_yolov3` can detect the bounding box of faces as the primary model while `dd-person_mask2former` isolates the head's silhouette as the secondary model by using the bitwise AND option. Refer to [this example](https://github.com/dustysys/ddetailer/issues/4#issuecomment-1311200268).
 - The dilation factor expands the mask, while the x & y offsets move the mask around.
 - The script is available in txt2img mode as well and can improve the quality of your 10 pulls with moderate settings (low denoise).
 
