@@ -203,7 +203,7 @@ class DetectionDetailerScript(scripts.Script):
                     subseed_strength=p_txt.subseed_strength,
                     seed_resize_from_h=p_txt.seed_resize_from_h,
                     seed_resize_from_w=p_txt.seed_resize_from_w,
-                    sampler_index=p_txt.sampler_index,
+                    sampler_name=p_txt.sampler_name,
                     n_iter=p_txt.n_iter,
                     steps=p_txt.steps,
                     cfg_scale=p_txt.cfg_scale,
@@ -325,7 +325,7 @@ class DetectionDetailerScript(scripts.Script):
                             images.save_image(processed.images[0], p.outpath_samples, "", start_seed, p.prompt, opts.samples_format, info=initial_info, p=p)
   
                 else: 
-                    print("No model {label_a} detections for output generation {n} with current settings.")
+                    print(f"No model {label_a} detections for output generation {n} with current settings.")
             state.job = f"Generation {n + 1} out of {state.job_count}"
         if (initial_info is None):
             initial_info = "No detections found."
