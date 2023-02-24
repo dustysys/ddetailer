@@ -225,8 +225,6 @@ class DetectionDetailerScript(scripts.Script):
                 )
             p.do_not_save_grid = True
             p.do_not_save_samples = True
-            p.raw_prompt = p_txt.prompt
-            p.raw_neg_prompt = p_txt.negative_prompt
         output_images = []
         state.job_count = ddetail_count
         for n in range(ddetail_count):
@@ -330,6 +328,8 @@ class DetectionDetailerScript(scripts.Script):
                         processed = processing.process_images(p)
                         if initial_info is None:
                             initial_info = processed.info
+                        if is_txt2img:
+                            initial_info += f", raw prompt: {p_txt.prompt}, raw negative prompt: {p_txt.negative_prompt}"
                         p.seed = processed.seed + 1
                         p.init_images = processed.images
                     
@@ -547,10 +547,4 @@ def inference_mmdet_bbox(image, modelname, conf_thres, label):
 
     return results
 
-def on_before_image_saved(params):
-    p = params.p
-    pnginfo = params.pnginfo
-    pnginfo['parameters'] += f', Raw prompt: {p.raw_prompt}, Raw negative prompt: {p.raw_neg_prompt}'
-
-script_callbacks.on_before_image_saved(on_before_image_saved)
 script_callbacks.on_ui_settings(on_ui_settings)
