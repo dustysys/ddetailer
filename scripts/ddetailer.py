@@ -329,7 +329,7 @@ class DetectionDetailerScript(scripts.Script):
                         if initial_info is None:
                             initial_info = processed.info
                         if is_txt2img:
-                            initial_info += f", raw prompt: {p_txt.prompt}, raw negative prompt: {p_txt.negative_prompt}"
+                            initial_info += f", raw prompt: \"{p_txt.prompt}\", raw negative prompt: \"{p_txt.negative_prompt}\"".replace("\n", " ")
                         p.seed = processed.seed + 1
                         p.init_images = processed.images
                     
