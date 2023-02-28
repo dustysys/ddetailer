@@ -14,6 +14,8 @@ from modules.paths import models_path
 from basicsr.utils.download_util import load_file_from_url
 
 dd_models_path = os.path.join(models_path, "mmdet")
+segm_model = None
+bbox_model = None
 
 def list_models(model_path):
         model_list = modelloader.load_models(model_path=model_path, ext_filter=[".pth"])
@@ -476,10 +478,15 @@ def inference(image, modelname, conf_thres, label):
     return results
 
 def inference_mmdet_segm(image, modelname, conf_thres, label):
+    global segm_model
     model_checkpoint = modelpath(modelname)
     model_config = os.path.splitext(model_checkpoint)[0] + ".py"
     model_device = get_device()
-    model = init_detector(model_config, model_checkpoint, device=model_device)
+    if segm_model is not None:
+        model = segm_model
+    else:
+        model = init_detector(model_config, model_checkpoint, device=model_device)
+        segm_model = model
     mmdet_results = inference_detector(model, np.array(image))
     bbox_results, segm_results = mmdet_results
     dataset = modeldataset(modelname)
@@ -504,10 +511,15 @@ def inference_mmdet_segm(image, modelname, conf_thres, label):
     return results
 
 def inference_mmdet_bbox(image, modelname, conf_thres, label):
+    global bbox_model
     model_checkpoint = modelpath(modelname)
     model_config = os.path.splitext(model_checkpoint)[0] + ".py"
     model_device = get_device()
-    model = init_detector(model_config, model_checkpoint, device=model_device)
+    if bbox_model is not None:
+        model = bbox_model
+    else:
+        model = init_detector(model_config, model_checkpoint, device=model_device)
+        bbox_model = model
     results = inference_detector(model, np.array(image))
     cv2_image = np.array(image)
     cv2_image = cv2_image[:, :, ::-1].copy()
