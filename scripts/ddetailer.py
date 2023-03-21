@@ -221,6 +221,9 @@ class DetectionDetailerScript(scripts.Script):
             orig_image = p.init_images[0]
         else:
             p_txt = p
+            img2img_sampler_name = p_txt.sampler_name
+            if p_txt.sampler_name in ['PLMS', 'UniPC']:  # PLMS/UniPC do not support img2img so we just silently switch to DDIM
+                img2img_sampler_name = 'DDIM'
             p_txt_prompt = dd_prompt if dd_prompt else p_txt.prompt
             p_txt_neg_prompt = dd_neg_prompt if dd_neg_prompt else p_txt.negative_prompt
             p = StableDiffusionProcessingImg2Img(
@@ -244,7 +247,7 @@ class DetectionDetailerScript(scripts.Script):
                     subseed_strength=p_txt.subseed_strength,
                     seed_resize_from_h=p_txt.seed_resize_from_h,
                     seed_resize_from_w=p_txt.seed_resize_from_w,
-                    sampler_name=p_txt.sampler_name,
+                    sampler_name=img2img_sampler_name,
                     n_iter=p_txt.n_iter,
                     steps=p_txt.steps,
                     cfg_scale=dd_cfg_scale,
