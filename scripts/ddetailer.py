@@ -263,7 +263,7 @@ class DetectionDetailerScript(scripts.Script):
                         p.negative_prompt = init_neg_prompt
                         processed = processing.process_images(p)
                         p.prompt = p_txt.prompt
-                        p.negative_prompt = p_text.negative_prompt
+                        p.negative_prompt = p_txt.negative_prompt
                         p.seed = processed.seed + 1
                         p.init_images = processed.images
 
@@ -327,8 +327,8 @@ class DetectionDetailerScript(scripts.Script):
                         p.negative_prompt = init_neg_prompt
                         processed = processing.process_images(p)
                         p.prompt = p_txt.prompt
-                        p.negative_prompt = p_text.negative_prompt
-                        if initial_info is None:
+                        p.negative_prompt = p_txt.negative_prompt
+                        if initial_info is None or initial_info != processed.info:
                             initial_info = processed.info
                         p.seed = processed.seed + 1
                         p.init_images = processed.images
@@ -344,7 +344,7 @@ class DetectionDetailerScript(scripts.Script):
         if (initial_info is None):
             initial_info = "No detections found."
 
-        return Processed(p, output_images, seed, initial_info)
+        return Processed(p, output_images, seed, p_txt.prompt)
 
 def modeldataset(model_shortname):
     path = modelpath(model_shortname)
