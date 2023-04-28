@@ -5,6 +5,7 @@ from PIL import Image
 import numpy as np
 import gradio as gr
 
+from copy import copy
 from modules import processing, images
 from modules import scripts, script_callbacks, shared, devices, modelloader
 from modules.processing import Processed, StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img
@@ -172,16 +173,19 @@ class DetectionDetailerScript(scripts.Script):
         processing.fix_seed(p)
         initial_info = None
         seed = p.seed
+        subseed = p.subseed
+        info = ""
         p.batch_size = 1
         ddetail_count = p.n_iter
         p.n_iter = 1
         p.do_not_save_grid = True
         p.do_not_save_samples = True
         is_txt2img = isinstance(p, StableDiffusionProcessingTxt2Img)
+
+        p_txt = copy(p)
         if (not is_txt2img):
             orig_image = p.init_images[0]
         else:
-            p_txt = p
             p = StableDiffusionProcessingImg2Img(
                     init_images = None,
                     resize_mode = 0,
@@ -213,19 +217,32 @@ class DetectionDetailerScript(scripts.Script):
                 )
             p.do_not_save_grid = True
             p.do_not_save_samples = True
+
+        all_prompts = []
+        all_seeds = []
+        all_subseeds = []
+        infotexts = []
+
         output_images = []
         state.job_count = ddetail_count
         for n in range(ddetail_count):
             devices.torch_gc()
             start_seed = seed + n
+
+            all_prompts.append(p_txt.prompt)
+            all_seeds.append(start_seed)
+            all_subseeds.append(subseed + n)
             if ( is_txt2img ):
                 print(f"Processing initial image for output generation {n + 1}.")
                 p_txt.seed = start_seed
                 processed = processing.process_images(p_txt)
                 init_image = processed.images[0]   
+                info = processed.info
+                all_prompts[n] = processed.all_prompts[0]
             else: 
                 init_image = orig_image
             
+            infotexts.append(info)
             output_images.append(init_image)
             masks_a = []
             masks_b_pre = []
@@ -254,12 +271,18 @@ class DetectionDetailerScript(scripts.Script):
                         if ( opts.dd_save_masks):
                             images.save_image(masks_b_pre[i], opts.outdir_ddetailer_masks, "", start_seed, p.prompt, opts.samples_format, p=p)
                         processed = processing.process_images(p)
+
+                        if not is_txt2img:
+                            p.prompt = processed.all_prompts[0]
+                            info = processed.info
                         p.seed = processed.seed + 1
+                        p.subseed = processed.subseed + 1
                         p.init_images = processed.images
 
                     if (gen_count > 0):
                         output_images[n] = processed.images[0]
                         init_image = processed.images[0]
+                        infotexts[n] = info
 
                 else:
                     print(f"No model B detections for output generation {n} with current settings.")
@@ -316,13 +339,16 @@ class DetectionDetailerScript(scripts.Script):
                         processed = processing.process_images(p)
                         if initial_info is None:
                             initial_info = processed.info
+                        info = processed.info
                         p.seed = processed.seed + 1
+                        p.subseed = processed.subseed + 1
                         p.init_images = processed.images
                     
                     if (gen_count > 0):
                         output_images[n] = processed.images[0]
+                        infotexts[n] = info
                         if ( opts.samples_save ):
-                            images.save_image(processed.images[0], p.outpath_samples, "", start_seed, p.prompt, opts.samples_format, info=initial_info, p=p)
+                            images.save_image(processed.images[0], p.outpath_samples, "", start_seed, p.prompt, opts.samples_format, info=info, p=p)
   
                 else: 
                     print(f"No model {label_a} detections for output generation {n} with current settings.")
@@ -330,7 +356,7 @@ class DetectionDetailerScript(scripts.Script):
         if (initial_info is None):
             initial_info = "No detections found."
 
-        return Processed(p, output_images, seed, initial_info)
+        return Processed(p, output_images, seed, initial_info, all_prompts=all_prompts, all_seeds=all_seeds, all_subseeds=all_subseeds, infotexts=infotexts)
 
 def modeldataset(model_shortname):
     path = modelpath(model_shortname)
