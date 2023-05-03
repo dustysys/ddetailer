@@ -4,13 +4,14 @@ import cv2
 from PIL import Image
 import numpy as np
 import gradio as gr
+import shutil
 
 from modules import processing, images
 from modules import scripts, script_callbacks, shared, devices, modelloader
 from modules.processing import Processed, StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img
 from modules.shared import opts, cmd_opts, state
 from modules.sd_models import model_hash
-from modules.paths import models_path
+from modules.paths import models_path, script_path
 from basicsr.utils.download_util import load_file_from_url
 
 dd_models_path = os.path.join(models_path, "mmdet")
@@ -49,14 +50,28 @@ def startup():
         run(f'"{python}" -m mim install mmcv-full', desc=f"Installing mmcv-full", errdesc=f"Couldn't install mmcv-full")
         run(f'"{python}" -m pip install mmdet', desc=f"Installing mmdet", errdesc=f"Couldn't install mmdet")
 
+    bbox_path = os.path.join(dd_models_path, "bbox")
+    segm_path = os.path.join(dd_models_path, "segm")
     if (len(list_models(dd_models_path)) == 0):
         print("No detection models found, downloading...")
-        bbox_path = os.path.join(dd_models_path, "bbox")
-        segm_path = os.path.join(dd_models_path, "segm")
         load_file_from_url("https://huggingface.co/dustysys/ddetailer/resolve/main/mmdet/bbox/mmdet_anime-face_yolov3.pth", bbox_path)
-        load_file_from_url("https://huggingface.co/dustysys/ddetailer/raw/main/mmdet/bbox/mmdet_anime-face_yolov3.py", bbox_path)
         load_file_from_url("https://huggingface.co/dustysys/ddetailer/resolve/main/mmdet/segm/mmdet_dd-person_mask2former.pth", segm_path)
-        load_file_from_url("https://huggingface.co/dustysys/ddetailer/raw/main/mmdet/segm/mmdet_dd-person_mask2former.py", segm_path)
+
+    import torch
+    print("Check config files...")
+    config_dir = os.path.join(script_path, "extensions", "ddetailer", "config")
+    configs = [ "mmdet_anime-face_yolov3.py", "mmdet_dd-person_mask2former.py" ]
+
+    destdir = bbox_path
+    for confpy in configs:
+        conf = os.path.join(config_dir, confpy)
+        dest = os.path.join(destdir, confpy)
+        if not os.path.exists(dest):
+            print(f"Copy config file: {confpy}..")
+            shutil.copy(conf, destdir)
+        destdir = segm_path
+
+    print("Done")
 
 startup()
 
