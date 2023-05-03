@@ -372,6 +372,8 @@ def create_segmask_preview(results, image):
     labels = results[0]
     bboxes = results[1]
     segms = results[2]
+    if not mmcv_legacy:
+        scores = results[3]
 
     cv2_image = np.array(image)
     cv2_image = cv2_image[:, :, ::-1].copy()
@@ -389,7 +391,10 @@ def create_segmask_preview(results, image):
         cv2_image = np.where(cv2_mask_rgb == 255, color_image, cv2_image)
         text_color = tuple([int(x) for x in ( color[0][0] - 100 )])
         name = labels[i]
-        score = bboxes[i][4]
+        if mmcv_legacy:
+            score = bboxes[i][4]
+        else:
+            score = scores[i]
         score = str(score)[:4]
         text = name + ":" + score
         cv2.putText(cv2_image, text, (centroid_x - 30, centroid_y), cv2.FONT_HERSHEY_DUPLEX, 0.4, text_color, 1, cv2.LINE_AA)
@@ -470,9 +475,16 @@ def create_segmasks(results):
     return segmasks
 
 import mmcv
-from mmdet.core import get_classes
-from mmdet.apis import (inference_detector,
+
+try:
+    from mmdet.core import get_classes
+    from mmdet.apis import (inference_detector,
                         init_detector)
+    mmcv_legacy = True
+except ImportError:
+    from mmdet.evaluation import get_classes
+    from mmdet.apis import inference_detector, init_detector
+    mmcv_legacy = False
 
 def get_device():
     device_id = shared.cmd_opts.device_id
@@ -494,27 +506,52 @@ def inference_mmdet_segm(image, modelname, conf_thres, label):
     model_checkpoint = modelpath(modelname)
     model_config = os.path.splitext(model_checkpoint)[0] + ".py"
     model_device = get_device()
-    model = init_detector(model_config, model_checkpoint, device=model_device)
-    mmdet_results = inference_detector(model, np.array(image))
-    bbox_results, segm_results = mmdet_results
+    if mmcv_legacy:
+        model = init_detector(model_config, model_checkpoint, device=model_device)
+        mmdet_results = inference_detector(model, np.array(image))
+        bbox_results, segm_results = mmdet_results
+    else:
+        model = init_detector(model_config, model_checkpoint, palette="random", device=model_device)
+        mmdet_results = inference_detector(model, np.array(image)).pred_instances
+        bboxes = mmdet_results.bboxes.numpy()
+
     dataset = modeldataset(modelname)
     classes = get_classes(dataset)
-    labels = [
-        np.full(bbox.shape[0], i, dtype=np.int32)
-        for i, bbox in enumerate(bbox_results)
-    ]
-    n,m = bbox_results[0].shape
+    if mmcv_legacy:
+        labels = [
+            np.full(bbox.shape[0], i, dtype=np.int32)
+            for i, bbox in enumerate(bbox_results)
+        ]
+        n, m = bbox_results[0].shape
+    else:
+        n, m = bboxes.shape
     if (n == 0):
-        return [[],[],[]]
-    labels = np.concatenate(labels)
-    bboxes = np.vstack(bbox_results)
-    segms = mmcv.concat_list(segm_results)
-    filter_inds = np.where(bboxes[:,-1] > conf_thres)[0]
-    results = [[],[],[]]
+        if mmcv_legacy:
+            return [[],[],[]]
+        else:
+            return [[],[],[],[]]
+
+    if mmcv_legacy:
+        labels = np.concatenate(labels)
+        bboxes = np.vstack(bbox_results)
+        segms = mmcv.concat_list(segm_results)
+
+        filter_inds = np.where(bboxes[:,-1] > conf_thres)[0]
+        results = [[],[],[]]
+    else:
+        labels = mmdet_results.labels
+        segms = mmdet_results.masks.numpy()
+        scores = mmdet_results.scores.numpy()
+
+        filter_inds = np.where(mmdet_results.scores > conf_thres)[0]
+        results = [[],[],[],[]]
+
     for i in filter_inds:
         results[0].append(label + "-" + classes[labels[i]])
         results[1].append(bboxes[i])
         results[2].append(segms[i])
+        if not mmcv_legacy:
+            results[3].append(scores[i])
 
     return results
 
@@ -522,29 +559,56 @@ def inference_mmdet_bbox(image, modelname, conf_thres, label):
     model_checkpoint = modelpath(modelname)
     model_config = os.path.splitext(model_checkpoint)[0] + ".py"
     model_device = get_device()
-    model = init_detector(model_config, model_checkpoint, device=model_device)
-    results = inference_detector(model, np.array(image))
+
+    if mmcv_legacy:
+        model = init_detector(model_config, model_checkpoint, device=model_device)
+        results = inference_detector(model, np.array(image))
+    else:
+        model = init_detector(model_config, model_checkpoint, device=model_device, palette="random")
+        output = inference_detector(model, np.array(image)).pred_instances
     cv2_image = np.array(image)
     cv2_image = cv2_image[:, :, ::-1].copy()
     cv2_gray = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2GRAY)
 
     segms = []
-    for (x0, y0, x1, y1, conf) in results[0]:
+    bboxes = []
+    if mmcv_legacy:
+        for (x0, y0, x1, y1, conf) in results[0]:
+            bboxes.append([x0, y0, x1, y1])
+    else:
+        bboxes = output.bboxes
+
+    for x0, y0, x1, y1 in bboxes:
         cv2_mask = np.zeros((cv2_gray.shape), np.uint8)
         cv2.rectangle(cv2_mask, (int(x0), int(y0)), (int(x1), int(y1)), 255, -1)
         cv2_mask_bool = cv2_mask.astype(bool)
         segms.append(cv2_mask_bool)
-    
-    n,m = results[0].shape
+
+    if mmcv_legacy:
+        n,m = results[0].shape
+    else:
+        n,m = output.bboxes.shape
     if (n == 0):
-        return [[],[],[]]
-    bboxes = np.vstack(results[0])
-    filter_inds = np.where(bboxes[:,-1] > conf_thres)[0]
-    results = [[],[],[]]
+        if mmcv_legacy:
+            return [[],[],[]]
+        else:
+            return [[],[],[],[]]
+    if mmcv_legacy:
+        bboxes = np.vstack(results[0])
+        filter_inds = np.where(bboxes[:,-1] > conf_thres)[0]
+        results = [[],[],[]]
+    else:
+        bboxes = output.bboxes.numpy()
+        scores = output.scores.numpy()
+        filter_inds = np.where(scores > conf_thres)[0]
+        results = [[],[],[],[]]
+
     for i in filter_inds:
         results[0].append(label)
         results[1].append(bboxes[i])
         results[2].append(segms[i])
+        if not mmcv_legacy:
+            results[3].append(scores[i])
 
     return results
 
