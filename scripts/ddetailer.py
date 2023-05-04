@@ -44,11 +44,17 @@ def list_models(model_path):
 
 def startup():
     from launch import is_installed, run
+    import torch
+    legacy = torch.__version__.split(".")[0] < "2"
     if not is_installed("mmdet"):
         python = sys.executable
         run(f'"{python}" -m pip install -U openmim', desc="Installing openmim", errdesc="Couldn't install openmim")
-        run(f'"{python}" -m mim install mmcv-full', desc=f"Installing mmcv-full", errdesc=f"Couldn't install mmcv-full")
-        run(f'"{python}" -m pip install mmdet', desc=f"Installing mmdet", errdesc=f"Couldn't install mmdet")
+        if legacy:
+            run(f'"{python}" -m mim install mmcv-full', desc=f"Installing mmcv-full", errdesc=f"Couldn't install mmcv-full")
+            run(f'"{python}" -m pip install mmdet==2.28.2', desc=f"Installing mmdet", errdesc=f"Couldn't install mmdet")
+        else:
+            run(f'"{python}" -m mim install mmcv>==2.0.0', desc=f"Installing mmcv", errdesc=f"Couldn't install mmcv")
+            run(f'"{python}" -m pip install mmdet', desc=f"Installing mmdet", errdesc=f"Couldn't install mmdet")
 
     bbox_path = os.path.join(dd_models_path, "bbox")
     segm_path = os.path.join(dd_models_path, "segm")
@@ -57,8 +63,6 @@ def startup():
         load_file_from_url("https://huggingface.co/dustysys/ddetailer/resolve/main/mmdet/bbox/mmdet_anime-face_yolov3.pth", bbox_path)
         load_file_from_url("https://huggingface.co/dustysys/ddetailer/resolve/main/mmdet/segm/mmdet_dd-person_mask2former.pth", segm_path)
 
-    import torch
-    legacy = torch.__version__.split(".")[0] < "2"
     print("Check config files...")
     config_dir = os.path.join(scripts.basedir(), "config")
     if legacy:
