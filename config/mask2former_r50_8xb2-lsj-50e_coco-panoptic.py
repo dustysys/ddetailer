@@ -24,7 +24,7 @@ data_preprocessor = dict(
     batch_augments=batch_augments,
 )
 
-num_things_classes = 1
+num_things_classes = 80
 num_stuff_classes = 0
 num_classes = num_things_classes + num_stuff_classes
 model = dict(
