@@ -61,7 +61,13 @@ def startup():
     if (len(list_models(dd_models_path)) == 0):
         print("No detection models found, downloading...")
         load_file_from_url("https://huggingface.co/dustysys/ddetailer/resolve/main/mmdet/bbox/mmdet_anime-face_yolov3.pth", bbox_path)
-        load_file_from_url("https://huggingface.co/dustysys/ddetailer/resolve/main/mmdet/segm/mmdet_dd-person_mask2former.pth", segm_path)
+        if legacy:
+            load_file_from_url("https://huggingface.co/dustysys/ddetailer/resolve/main/mmdet/segm/mmdet_dd-person_mask2former.pth", segm_path)
+        else:
+            load_file_from_url(
+                "https://download.openmmlab.com/mmdetection/v3.0/mask2former/mask2former_r50_8xb2-lsj-50e_coco/mask2former_r50_8xb2-lsj-50e_coco_20220506_191028-41b088b6.pth",
+                segm_path,
+                file_name="mmdet_dd-person_mask2former.pth")
 
     print("Check config files...")
     config_dir = os.path.join(script_path, "extensions", "ddetailer", "config")
