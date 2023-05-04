@@ -58,17 +58,23 @@ def startup():
         load_file_from_url("https://huggingface.co/dustysys/ddetailer/resolve/main/mmdet/segm/mmdet_dd-person_mask2former.pth", segm_path)
 
     import torch
+    legacy = torch.__version__.split(".")[0] < "2"
     print("Check config files...")
     config_dir = os.path.join(scripts.basedir(), "config")
-    configs = [ "mmdet_anime-face_yolov3.py", "mmdet_dd-person_mask2former.py" ]
+    if legacy:
+        configs = [ "mmdet_anime-face_yolov3.py", "mmdet_dd-person_mask2former.py" ]
+    else:
+        configs = [ "mmdet_anime-face_yolov3-v3.py", "mmdet_dd-person_mask2former-v3.py", "mask2former_r50_8xb2-lsj-50e_coco-panoptic.py", "coco_panoptic.py" ]
 
     destdir = bbox_path
     for confpy in configs:
         conf = os.path.join(config_dir, confpy)
+        if not legacy:
+            confpy = confpy.replace("-v3.py", ".py")
         dest = os.path.join(destdir, confpy)
         if not os.path.exists(dest):
             print(f"Copy config file: {confpy}..")
-            shutil.copy(conf, destdir)
+            shutil.copy(conf, dest)
         destdir = segm_path
 
     print("Done")
