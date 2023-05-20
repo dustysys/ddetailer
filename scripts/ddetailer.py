@@ -247,43 +247,40 @@ class DetectionDetailerScript(scripts.Script):
         info = ""
         ddetail_count = 1
 
-        is_txt2img = isinstance(p, StableDiffusionProcessingTxt2Img)
         p_txt = copy(p)
-        if (not is_txt2img):
-            orig_image = p.init_images[0]
-        else:
-            p = StableDiffusionProcessingImg2Img(
-                    init_images = [pp.image],
-                    resize_mode = 0,
-                    denoising_strength = dd_denoising_strength,
-                    mask = None,
-                    mask_blur= dd_mask_blur,
-                    inpainting_fill = 1,
-                    inpaint_full_res = dd_inpaint_full_res,
-                    inpaint_full_res_padding= dd_inpaint_full_res_padding,
-                    inpainting_mask_invert= 0,
-                    sd_model=p_txt.sd_model,
-                    outpath_samples=p_txt.outpath_samples,
-                    outpath_grids=p_txt.outpath_grids,
-                    prompt=p_txt.prompt,
-                    negative_prompt=p_txt.negative_prompt,
-                    styles=p_txt.styles,
-                    seed=p_txt.seed,
-                    subseed=p_txt.subseed,
-                    subseed_strength=p_txt.subseed_strength,
-                    seed_resize_from_h=p_txt.seed_resize_from_h,
-                    seed_resize_from_w=p_txt.seed_resize_from_w,
-                    sampler_name=p_txt.sampler_name,
-                    batch_size=1,
-                    n_iter=1,
-                    steps=p_txt.steps,
-                    cfg_scale=p_txt.cfg_scale,
-                    width=p_txt.width,
-                    height=p_txt.height,
-                    tiling=p_txt.tiling,
-                )
-            p.do_not_save_grid = True
-            p.do_not_save_samples = True
+
+        p = StableDiffusionProcessingImg2Img(
+                init_images = [pp.image],
+                resize_mode = 0,
+                denoising_strength = dd_denoising_strength,
+                mask = None,
+                mask_blur= dd_mask_blur,
+                inpainting_fill = 1,
+                inpaint_full_res = dd_inpaint_full_res,
+                inpaint_full_res_padding= dd_inpaint_full_res_padding,
+                inpainting_mask_invert= 0,
+                sd_model=p_txt.sd_model,
+                outpath_samples=p_txt.outpath_samples,
+                outpath_grids=p_txt.outpath_grids,
+                prompt=p_txt.prompt,
+                negative_prompt=p_txt.negative_prompt,
+                styles=p_txt.styles,
+                seed=p_txt.seed,
+                subseed=p_txt.subseed,
+                subseed_strength=p_txt.subseed_strength,
+                seed_resize_from_h=p_txt.seed_resize_from_h,
+                seed_resize_from_w=p_txt.seed_resize_from_w,
+                sampler_name=p_txt.sampler_name,
+                batch_size=1,
+                n_iter=1,
+                steps=p_txt.steps,
+                cfg_scale=p_txt.cfg_scale,
+                width=p_txt.width,
+                height=p_txt.height,
+                tiling=p_txt.tiling,
+            )
+        p.do_not_save_grid = True
+        p.do_not_save_samples = True
 
         p._disable_ddetailer = True
 
@@ -292,13 +289,9 @@ class DetectionDetailerScript(scripts.Script):
         for n in range(ddetail_count):
             devices.torch_gc()
             start_seed = seed + n
-            if ( is_txt2img ):
-                print(f"Prepare initial image for output generation {p_txt.iteration + 1}.")
-                init_image = copy(pp.image)
-                info = processing.create_infotext(p_txt, p_txt.all_prompts, p_txt.all_seeds, p_txt.all_subseeds, None, 0, 0)
-            else: 
-                init_image = orig_image
-            
+            init_image = copy(pp.image)
+            info = processing.create_infotext(p_txt, p_txt.all_prompts, p_txt.all_seeds, p_txt.all_subseeds, None, 0, 0)
+
             output_images.append(init_image)
             masks_a = []
             masks_b_pre = []
@@ -328,9 +321,6 @@ class DetectionDetailerScript(scripts.Script):
                             images.save_image(masks_b_pre[i], opts.outdir_ddetailer_masks, "", start_seed, p.prompt, opts.samples_format, p=p)
                         processed = processing.process_images(p)
 
-                        if not is_txt2img:
-                            p.prompt = processed.all_prompts[0]
-                            info = processed.info
                         p.seed = processed.seed + 1
                         p.subseed = processed.subseed + 1
                         p.init_images = processed.images
