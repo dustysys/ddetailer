@@ -247,8 +247,11 @@ class DetectionDetailerScript(scripts.Script):
         info = ""
         ddetail_count = 1
 
-        p_txt = copy(p)
+        sampler_name = p.sampler_name
+        if sampler_name in ["PLMS", "UniPC"]:
+            sampler_name = "Euler"
 
+        p_txt = copy(p)
         p = StableDiffusionProcessingImg2Img(
                 init_images = [pp.image],
                 resize_mode = 0,
@@ -270,7 +273,7 @@ class DetectionDetailerScript(scripts.Script):
                 subseed_strength=p_txt.subseed_strength,
                 seed_resize_from_h=p_txt.seed_resize_from_h,
                 seed_resize_from_w=p_txt.seed_resize_from_w,
-                sampler_name=p_txt.sampler_name,
+                sampler_name=sampler_name,
                 batch_size=1,
                 n_iter=1,
                 steps=p_txt.steps,
