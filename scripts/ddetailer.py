@@ -6,7 +6,7 @@ import numpy as np
 import gradio as gr
 import shutil
 
-from copy import copy
+from copy import copy, deepcopy
 from modules import processing, images
 from modules import scripts, script_callbacks, shared, devices, modelloader
 from modules.processing import Processed, StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img
@@ -282,6 +282,9 @@ class DetectionDetailerScript(scripts.Script):
                 height=p_txt.height,
                 tiling=p_txt.tiling,
             )
+        p.scripts = copy(p_txt.scripts)
+        p.script_args = deepcopy(p_txt.script_args)
+
         p.do_not_save_grid = True
         p.do_not_save_samples = True
 
