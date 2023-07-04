@@ -426,7 +426,7 @@ class DetectionDetailerScript(scripts.Script):
                     print(f"No model {label_a} detections for output generation {p_txt._idx + 1} with current settings.")
             state.job = f"Generation {p_txt._idx + 1} out of {state.job_count}"
         if (initial_info is None):
-            initial_info = "No detections found."
+            initial_info = info
 
         if len(output_images) > 0:
             pp.image = output_images[0]
