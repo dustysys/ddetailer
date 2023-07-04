@@ -112,6 +112,7 @@ class DetectionDetailerScript(scripts.Script):
         with gr.Accordion("Detection Detailer", open=False):
             with gr.Row():
                 enabled = gr.Checkbox(label="Enable", value=False, visible=True)
+                use_prompt_edit = gr.Checkbox(label="Use DDetailer prompts", value=False, visible=True)
 
             model_list = list_models(dd_models_path)
             model_list.insert(0, "None")
@@ -125,6 +126,23 @@ class DetectionDetailerScript(scripts.Script):
                         dd_model_a = gr.Dropdown(label="Primary detection model (A):", choices=model_list,value = "None", visible=True, type="value")
 
                     with gr.Group():
+                        with gr.Group(visible=False) as prompt_1:
+                            with gr.Row():
+                                dd_prompt = gr.Textbox(
+                                    label="prompt_1",
+                                    show_label=False,
+                                    lines=3,
+                                    placeholder="Prompt"
+                                    + "\nIf blank, the main prompt is used."
+                                )
+
+                                dd_neg_prompt = gr.Textbox(
+                                    label="negative_prompt_1",
+                                    show_label=False,
+                                    lines=3,
+                                    placeholder="Negative prompt"
+                                    + "\nIf blank, the main negative prompt is used."
+                                )
                         with gr.Group(visible=False) as model_a_options:
                             with gr.Row():
                                 dd_conf_a = gr.Slider(label='Detection confidence threshold % (A)', minimum=0, maximum=100, step=1, value=30)
@@ -139,6 +157,24 @@ class DetectionDetailerScript(scripts.Script):
                         dd_model_b = gr.Dropdown(label="Secondary detection model (B) (optional):", choices=model_list,value = "None", visible =False, type="value")
 
                     with gr.Group():
+                        with gr.Group(visible=False) as prompt_2:
+                            with gr.Row():
+                                dd_prompt_2 = gr.Textbox(
+                                    label="prompt_2",
+                                    show_label=False,
+                                    lines=3,
+                                    placeholder="Prompt"
+                                    + "\nIf blank, the main prompt is used."
+                                )
+
+                                dd_neg_prompt_2 = gr.Textbox(
+                                    label="negative_prompt_2",
+                                    show_label=False,
+                                    lines=3,
+                                    placeholder="Negative prompt"
+                                    + "\nIf blank, the main negative prompt is used."
+                                )
+
                         with gr.Group(visible=False) as model_b_options:
                             with gr.Row():
                                 dd_conf_b = gr.Slider(label='Detection confidence threshold % (B)', minimum=0, maximum=100, step=1, value=30)
@@ -157,6 +193,11 @@ class DetectionDetailerScript(scripts.Script):
                 with gr.Column(variant="compact"):
                     dd_inpaint_full_res = gr.Checkbox(label='Inpaint at full resolution ', value=True, visible = (not is_img2img))
                     dd_inpaint_full_res_padding = gr.Slider(label='Inpaint at full resolution padding, pixels ', minimum=0, maximum=256, step=4, value=32, visible=(not is_img2img))
+
+                    gr.HTML(value="<p>Low level options (0 value means use default setting value)</p>")
+                    dd_cfg_scale = gr.Slider(label='Use CFG Scale', minimum=0, maximum=30, step=0.5, value=0)
+                    dd_steps = gr.Slider(label='Use sampling steps', minimum=0, maximum=120, step=1, value=0)
+                    dd_noise_multiplier = gr.Slider(label='Use noise multiplier', minimum=0, maximum=1.5, step=0.01, value=0)
 
                 with gr.Group(visible=False) as operation:
                     gr.HTML(value="<p>A-B operation:</p>")
@@ -183,16 +224,28 @@ class DetectionDetailerScript(scripts.Script):
                 outputs=[model_b_options, operation]
             )
 
-            return [info, enabled,
+            use_prompt_edit.change(
+                lambda enable: {
+                    prompt_1:gr_show(enable),
+                    prompt_2:gr_show(enable)
+                },
+                inputs=[use_prompt_edit],
+                outputs=[prompt_1, prompt_2]
+            )
+
+            return [info, enabled, use_prompt_edit,
                     dd_model_a,
                     dd_conf_a, dd_dilation_factor_a,
                     dd_offset_x_a, dd_offset_y_a,
+                    dd_prompt, dd_neg_prompt,
                     dd_preprocess_b, dd_bitwise_op,
                     dd_model_b,
                     dd_conf_b, dd_dilation_factor_b,
                     dd_offset_x_b, dd_offset_y_b,
+                    dd_prompt_2, dd_neg_prompt_2,
                     dd_mask_blur, dd_denoising_strength,
-                    dd_inpaint_full_res, dd_inpaint_full_res_padding
+                    dd_inpaint_full_res, dd_inpaint_full_res_padding,
+                    dd_cfg_scale, dd_steps, dd_noise_multiplier
             ]
 
     def get_seed(self, p) -> tuple[int, int]:
@@ -241,16 +294,19 @@ class DetectionDetailerScript(scripts.Script):
         if getattr(p, "_disable_ddetailer", False):
             return
 
-    def postprocess_image(self, p, pp, info, enabled,
+    def postprocess_image(self, p, pp, info, enabled, use_prompt_edit,
                      dd_model_a, 
                      dd_conf_a, dd_dilation_factor_a,
                      dd_offset_x_a, dd_offset_y_a,
+                     dd_prompt, dd_neg_prompt,
                      dd_preprocess_b, dd_bitwise_op, 
                      dd_model_b,
                      dd_conf_b, dd_dilation_factor_b,
                      dd_offset_x_b, dd_offset_y_b,  
+                     dd_prompt_2, dd_neg_prompt_2,
                      dd_mask_blur, dd_denoising_strength,
-                     dd_inpaint_full_res, dd_inpaint_full_res_padding):
+                     dd_inpaint_full_res, dd_inpaint_full_res_padding,
+                     dd_cfg_scale, dd_steps, dd_noise_multiplier):
 
         if getattr(p, "_disable_ddetailer", False):
             return
@@ -273,6 +329,14 @@ class DetectionDetailerScript(scripts.Script):
             sampler_name = "Euler"
 
         p_txt = copy(p)
+
+        prompt = dd_prompt if use_prompt_edit and dd_prompt else p_txt.prompt
+        neg_prompt = dd_neg_prompt if use_prompt_edit and dd_neg_prompt else p_txt.negative_prompt
+
+        cfg_scale = dd_cfg_scale if dd_cfg_scale > 0 else p_txt.cfg_scale
+        steps = dd_steps if dd_steps > 0 else p_txt.steps
+        initial_noise_multiplier = dd_noise_multiplier if dd_noise_multiplier > 0 else None
+
         p = StableDiffusionProcessingImg2Img(
                 init_images = [pp.image],
                 resize_mode = 0,
@@ -283,11 +347,12 @@ class DetectionDetailerScript(scripts.Script):
                 inpaint_full_res = dd_inpaint_full_res,
                 inpaint_full_res_padding= dd_inpaint_full_res_padding,
                 inpainting_mask_invert= 0,
+                initial_noise_multiplier=initial_noise_multiplier,
                 sd_model=p_txt.sd_model,
                 outpath_samples=p_txt.outpath_samples,
                 outpath_grids=p_txt.outpath_grids,
-                prompt=p_txt.prompt,
-                negative_prompt=p_txt.negative_prompt,
+                prompt=prompt,
+                negative_prompt=neg_prompt,
                 styles=p_txt.styles,
                 seed=p_txt.seed,
                 subseed=p_txt.subseed,
@@ -297,8 +362,8 @@ class DetectionDetailerScript(scripts.Script):
                 sampler_name=sampler_name,
                 batch_size=1,
                 n_iter=1,
-                steps=p_txt.steps,
-                cfg_scale=p_txt.cfg_scale,
+                steps=steps,
+                cfg_scale=cfg_scale,
                 width=p_txt.width,
                 height=p_txt.height,
                 tiling=p_txt.tiling,
