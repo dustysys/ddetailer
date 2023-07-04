@@ -198,7 +198,7 @@ class DetectionDetailerScript(scripts.Script):
             ]
 
     def get_seed(self, p) -> tuple[int, int]:
-        i = p.iteration
+        i = p._idx
 
         if not p.all_seeds:
             seed = p.seed
@@ -260,6 +260,8 @@ class DetectionDetailerScript(scripts.Script):
 
         if not enabled:
             return
+
+        p._idx = getattr(p, "_idx", -1) + 1
 
         initial_info = None
         seed, subseed = self.get_seed(p)
@@ -339,7 +341,7 @@ class DetectionDetailerScript(scripts.Script):
                         images.save_image(segmask_preview_b, opts.outdir_ddetailer_previews, "", start_seed, p.prompt, opts.samples_format, p=p)
                     gen_count = len(masks_b_pre)
                     state.job_count += gen_count
-                    print(f"Processing {gen_count} model {label_b_pre} detections for output generation {p_txt.iteration + 1}.")
+                    print(f"Processing {gen_count} model {label_b_pre} detections for output generation {p_txt._idx + 1}.")
                     p.seed = start_seed
                     p.init_images = [init_image]
 
@@ -358,7 +360,7 @@ class DetectionDetailerScript(scripts.Script):
                         init_image = processed.images[0]
 
                 else:
-                    print(f"No model B detections for output generation {p_txt.iteration + 1} with current settings.")
+                    print(f"No model B detections for output generation {p_txt._idx + 1} with current settings.")
 
             # Primary run
             if (dd_model_a != "None"):
@@ -400,7 +402,7 @@ class DetectionDetailerScript(scripts.Script):
                         images.save_image(segmask_preview_a, opts.outdir_ddetailer_previews, "", start_seed, p.prompt, opts.samples_format, p=p)
                     gen_count = len(masks_a)
                     state.job_count += gen_count
-                    print(f"Processing {gen_count} model {label_a} detections for output generation {p_txt.iteration + 1}.")
+                    print(f"Processing {gen_count} model {label_a} detections for output generation {p_txt._idx + 1}.")
                     p.seed = start_seed
                     p.init_images = [init_image]
 
@@ -421,8 +423,8 @@ class DetectionDetailerScript(scripts.Script):
                         output_images[n] = processed.images[0]
   
                 else: 
-                    print(f"No model {label_a} detections for output generation {p_txt.iteration + 1} with current settings.")
-            state.job = f"Generation {p_txt.iteration + 1} out of {state.job_count}"
+                    print(f"No model {label_a} detections for output generation {p_txt._idx + 1} with current settings.")
+            state.job = f"Generation {p_txt._idx + 1} out of {state.job_count}"
         if (initial_info is None):
             initial_info = "No detections found."
 
