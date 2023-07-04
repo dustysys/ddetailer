@@ -5,6 +5,7 @@ from PIL import Image
 import numpy as np
 import gradio as gr
 import shutil
+from pathlib import Path
 
 from copy import copy, deepcopy
 from modules import processing, images
@@ -217,6 +218,27 @@ class DetectionDetailerScript(scripts.Script):
 
         return seed, subseed
 
+    def script_filter(self, p):
+        script_runner = copy(p.scripts)
+
+        default = "dynamic_prompting,dynamic_thresholding,wildcards,wildcard_recursive"
+        script_names = default
+        script_names_set = {
+            name
+            for script_name in script_names.split(",")
+            for name in (script_name, script_name.strip())
+        }
+
+        filtered_alwayson = []
+        for script_object in script_runner.alwayson_scripts:
+            filepath = script_object.filename
+            filename = Path(filepath).stem
+            if filename in script_names_set:
+                filtered_alwayson.append(script_object)
+
+        script_runner.alwayson_scripts = filtered_alwayson
+        return script_runner
+
     def process(self, p, *args):
         if getattr(p, "_disable_ddetailer", False):
             return
@@ -282,7 +304,7 @@ class DetectionDetailerScript(scripts.Script):
                 height=p_txt.height,
                 tiling=p_txt.tiling,
             )
-        p.scripts = copy(p_txt.scripts)
+        p.scripts = self.script_filter(p_txt)
         p.script_args = deepcopy(p_txt.script_args)
 
         p.do_not_save_grid = True
