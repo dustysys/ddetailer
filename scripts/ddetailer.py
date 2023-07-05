@@ -96,6 +96,56 @@ startup()
 def gr_show(visible=True):
     return {"visible": visible, "__type__": "update"}
 
+def ddetailer_extra_params(
+    use_prompt_edit,
+    dd_model_a,
+    dd_conf_a, dd_dilation_factor_a,
+    dd_offset_x_a, dd_offset_y_a,
+    dd_prompt, dd_neg_prompt,
+    dd_preprocess_b, dd_bitwise_op,
+    dd_model_b,
+    dd_conf_b, dd_dilation_factor_b,
+    dd_offset_x_b, dd_offset_y_b,
+    dd_prompt_2, dd_neg_prompt_2,
+    dd_mask_blur, dd_denoising_strength,
+    dd_inpaint_full_res, dd_inpaint_full_res_padding,
+    dd_cfg_scale, dd_steps, dd_noise_multiplier,
+):
+    params = {
+        "DDetailer use prompt edit": use_prompt_edit,
+        "DDetailer prompt": dd_prompt,
+        "DDetailer neg prompt": dd_neg_prompt,
+        "DDetailer model a": dd_model_a,
+        "DDetailer conf a": dd_conf_a,
+        "DDetailer dilation a": dd_dilation_factor_a,
+        "DDetailer offset x a": dd_offset_x_a,
+        "DDetailer offset y a": dd_offset_y_a,
+        "DDetailer mask blur": dd_mask_blur,
+        "DDetailer denoising": dd_denoising_strength,
+        "DDetailer inpaint full": dd_inpaint_full_res,
+        "DDetailer inpaint padding": dd_inpaint_full_res_padding,
+        # DDtailer extension
+        "DDetailer cfg": dd_cfg_scale,
+        "DDetailer steps": dd_steps,
+        "DDetailer noise multiplier": dd_noise_multiplier,
+    }
+
+    if dd_model_b != "None":
+        params["DDetailer model b"] = dd_model_b
+        params["DDetailer preprocess b"] = dd_preprocess_b
+        params["DDetailer bitwise"] = dd_bitwise_op
+        params["DDetailer conf b"] = dd_conf_b
+        params["DDetailer dilation b"] = dd_dilation_factor_b
+        params["DDetailer offset x b"] = dd_offset_x_b
+        params["DDetailer offset y b"] = dd_offset_y_b
+
+    if not dd_prompt:
+        params.pop("DDetailer prompt")
+    if not dd_neg_prompt:
+        params.pop("DDetailer neg prompt")
+
+    return params
+
 class DetectionDetailerScript(scripts.Script):
     def __init__(self):
         super().__init__()
@@ -213,6 +263,31 @@ class DetectionDetailerScript(scripts.Script):
                 },
                 inputs= [dd_model_a],
                 outputs=[dd_model_b, model_a_options, options]
+            )
+
+            self.infotext_fields = (
+                (use_prompt_edit, "DDetailer use prompt edit"),
+                (dd_prompt, "DDetailer prompt"),
+                (dd_neg_prompt, "DDetailer neg prompt"),
+                (dd_model_a, "DDetailer model a"),
+                (dd_conf_a, "DDetailer conf a"),
+                (dd_dilation_factor_a, "DDetailer dilation a"),
+                (dd_offset_x_a, "DDetailer offset x a"),
+                (dd_offset_y_a, "DDetailer offset y a"),
+                (dd_preprocess_b, "DDetailer preprocess b"),
+                (dd_bitwise_op, "DDetailer bitwise"),
+                (dd_model_b, "DDetailer model b"),
+                (dd_conf_b, "DDetailer conf b"),
+                (dd_dilation_factor_b, "DDetailer dilation b"),
+                (dd_offset_x_b, "DDetailer offset x b"),
+                (dd_offset_y_b, "DDetailer offset y b"),
+                (dd_mask_blur, "DDetailer mask blur"),
+                (dd_denoising_strength, "DDetailer denoising"),
+                (dd_inpaint_full_res, "DDetailer inpaint full"),
+                (dd_inpaint_full_res_padding, "DDetailer inpaint padding"),
+                (dd_cfg_scale, "DDetailer cfg"),
+                (dd_steps, "DDetailer steps"),
+                (dd_noise_multiplier, "DDetailer noise multiplier"),
             )
 
             dd_model_b.change(
@@ -333,6 +408,24 @@ class DetectionDetailerScript(scripts.Script):
         prompt = dd_prompt if use_prompt_edit and dd_prompt else p_txt.prompt
         neg_prompt = dd_neg_prompt if use_prompt_edit and dd_neg_prompt else p_txt.negative_prompt
 
+        # ddetailer info
+        extra_params = ddetailer_extra_params(
+            use_prompt_edit,
+            dd_model_a,
+            dd_conf_a, dd_dilation_factor_a,
+            dd_offset_x_a, dd_offset_y_a,
+            dd_prompt, dd_neg_prompt,
+            dd_preprocess_b, dd_bitwise_op,
+            dd_model_b,
+            dd_conf_b, dd_dilation_factor_b,
+            dd_offset_x_b, dd_offset_y_b,
+            dd_prompt_2, dd_neg_prompt_2,
+            dd_mask_blur, dd_denoising_strength,
+            dd_inpaint_full_res, dd_inpaint_full_res_padding,
+            dd_cfg_scale, dd_steps, dd_noise_multiplier,
+        )
+        p_txt.extra_generation_params.update(extra_params)
+
         cfg_scale = dd_cfg_scale if dd_cfg_scale > 0 else p_txt.cfg_scale
         steps = dd_steps if dd_steps > 0 else p_txt.steps
         initial_noise_multiplier = dd_noise_multiplier if dd_noise_multiplier > 0 else None
@@ -367,6 +460,7 @@ class DetectionDetailerScript(scripts.Script):
                 width=p_txt.width,
                 height=p_txt.height,
                 tiling=p_txt.tiling,
+                extra_generation_params=p_txt.extra_generation_params,
             )
         p.scripts = self.script_filter(p_txt)
         p.script_args = deepcopy(p_txt.script_args)
