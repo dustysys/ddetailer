@@ -96,8 +96,12 @@ startup()
 def gr_show(visible=True):
     return {"visible": visible, "__type__": "update"}
 
+def gr_enable(interactive=True):
+    return {"interactive": interactive, "__type__": "update"}
+
 def ddetailer_extra_params(
     use_prompt_edit,
+    use_prompt_edit_2,
     dd_model_a,
     dd_conf_a, dd_dilation_factor_a,
     dd_offset_x_a, dd_offset_y_a,
@@ -113,6 +117,7 @@ def ddetailer_extra_params(
 ):
     params = {
         "DDetailer use prompt edit": use_prompt_edit,
+        "DDetailer use prompt edit 2": use_prompt_edit_2,
         "DDetailer prompt": dd_prompt,
         "DDetailer neg prompt": dd_neg_prompt,
         "DDetailer prompt 2": dd_prompt_2,
@@ -168,7 +173,6 @@ class DetectionDetailerScript(scripts.Script):
         with gr.Accordion("Detection Detailer", open=False):
             with gr.Row():
                 enabled = gr.Checkbox(label="Enable", value=False, visible=True)
-                use_prompt_edit = gr.Checkbox(label="Use DDetailer prompts", value=False, visible=True)
 
             model_list = list_models(dd_models_path)
             model_list.insert(0, "None")
@@ -180,6 +184,7 @@ class DetectionDetailerScript(scripts.Script):
                 with gr.Tab("Primary"):
                     with gr.Row():
                         dd_model_a = gr.Dropdown(label="Primary detection model (A):", choices=model_list,value = "None", visible=True, type="value")
+                        use_prompt_edit = gr.Checkbox(label="Use Prompt edit", elem_classes="prompt_edit_checkbox", value=False, interactive=False, visible=True)
 
                     with gr.Group():
                         with gr.Group(visible=False) as prompt_1:
@@ -211,6 +216,7 @@ class DetectionDetailerScript(scripts.Script):
                 with gr.Tab("Secondary"):
                     with gr.Row():
                         dd_model_b = gr.Dropdown(label="Secondary detection model (B) (optional):", choices=model_list,value = "None", visible =False, type="value")
+                        use_prompt_edit_2 = gr.Checkbox(label="Use Prompt edit", elem_classes="prompt_edit_checkbox", value=False, interactive=False, visible=True)
 
                     with gr.Group():
                         with gr.Group(visible=False) as prompt_2:
@@ -239,6 +245,8 @@ class DetectionDetailerScript(scripts.Script):
                             with gr.Row():
                                 dd_offset_x_b = gr.Slider(label='X offset (B)', minimum=-200, maximum=200, step=1, value=0)
                                 dd_offset_y_b = gr.Slider(label='Y offset (B)', minimum=-200, maximum=200, step=1, value=0)
+                            with gr.Row():
+                                dd_preprocess_b = gr.Checkbox(label='Inpaint model B detections before model A runs')
 
             with gr.Group(visible=False) as options:
                 gr.HTML(value="<p>Detection options:</p>", visible=(not is_img2img))
@@ -258,17 +266,17 @@ class DetectionDetailerScript(scripts.Script):
                 with gr.Group(visible=False) as operation:
                     gr.HTML(value="<p>A-B operation:</p>")
                     with gr.Row():
-                        dd_preprocess_b = gr.Checkbox(label='Inpaint model B detections before model A runs')
                         dd_bitwise_op = gr.Radio(label='Bitwise operation', choices=['None', 'A&B', 'A-B'], value="None")
 
             dd_model_a.change(
                 lambda modelname: {
                     dd_model_b:gr_show( modelname != "None" ),
                     model_a_options:gr_show( modelname != "None" ),
-                    options:gr_show( modelname != "None" )
+                    options:gr_show( modelname != "None" ),
+                    use_prompt_edit:gr_enable( modelname != "None" )
                 },
                 inputs= [dd_model_a],
-                outputs=[dd_model_b, model_a_options, options]
+                outputs=[dd_model_b, model_a_options, options, use_prompt_edit]
             )
 
             self.infotext_fields = (
@@ -299,22 +307,32 @@ class DetectionDetailerScript(scripts.Script):
             dd_model_b.change(
                 lambda modelname: {
                     model_b_options:gr_show( modelname != "None" ),
-                    operation:gr_show( modelname != "None" )
+                    operation:gr_show( modelname != "None" ),
+                    use_prompt_edit_2:gr_enable( modelname != "None" )
                 },
                 inputs= [dd_model_b],
-                outputs=[model_b_options, operation]
+                outputs=[model_b_options, operation, use_prompt_edit_2]
             )
 
             use_prompt_edit.change(
                 lambda enable: {
                     prompt_1:gr_show(enable),
-                    prompt_2:gr_show(enable)
                 },
                 inputs=[use_prompt_edit],
-                outputs=[prompt_1, prompt_2]
+                outputs=[prompt_1]
             )
 
-            return [info, enabled, use_prompt_edit,
+            use_prompt_edit_2.change(
+                lambda enable: {
+                    prompt_2:gr_show(enable),
+                },
+                inputs=[use_prompt_edit_2],
+                outputs=[prompt_2]
+            )
+
+            return [info, enabled,
+                    use_prompt_edit,
+                    use_prompt_edit_2,
                     dd_model_a,
                     dd_conf_a, dd_dilation_factor_a,
                     dd_offset_x_a, dd_offset_y_a,
@@ -375,7 +393,7 @@ class DetectionDetailerScript(scripts.Script):
         if getattr(p, "_disable_ddetailer", False):
             return
 
-    def postprocess_image(self, p, pp, info, enabled, use_prompt_edit,
+    def postprocess_image(self, p, pp, info, enabled, use_prompt_edit, use_prompt_edit_2,
                      dd_model_a, 
                      dd_conf_a, dd_dilation_factor_a,
                      dd_offset_x_a, dd_offset_y_a,
@@ -417,6 +435,7 @@ class DetectionDetailerScript(scripts.Script):
         # ddetailer info
         extra_params = ddetailer_extra_params(
             use_prompt_edit,
+            use_prompt_edit_2,
             dd_model_a,
             dd_conf_a, dd_dilation_factor_a,
             dd_offset_x_a, dd_offset_y_a,
@@ -510,8 +529,8 @@ class DetectionDetailerScript(scripts.Script):
                     p2.init_images = [init_image]
 
                     # prompt/negative_prompt for pre-processing
-                    p2.prompt = dd_prompt_2 if use_prompt_edit and dd_prompt_2 else p_txt.prompt
-                    p2.negative_prompt = dd_neg_prompt_2 if use_prompt_edit and dd_neg_prompt_2 else p_txt.negative_prompt
+                    p2.prompt = dd_prompt_2 if use_prompt_edit_2 and dd_prompt_2 else p_txt.prompt
+                    p2.negative_prompt = dd_neg_prompt_2 if use_prompt_edit_2 and dd_neg_prompt_2 else p_txt.negative_prompt
 
                     for i in range(gen_count):
                         p2.image_mask = masks_b_pre[i]
