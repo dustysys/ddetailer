@@ -9,7 +9,7 @@ from pathlib import Path
 
 from copy import copy, deepcopy
 from modules import processing, images
-from modules import scripts, script_callbacks, shared, devices, modelloader
+from modules import scripts, script_callbacks, shared, devices, modelloader, sd_samplers_common
 from modules.processing import Processed, StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img
 from modules.shared import opts, cmd_opts, state
 from modules.sd_models import model_hash
@@ -532,6 +532,11 @@ class DetectionDetailerScript(scripts.Script):
                     p2.prompt = dd_prompt_2 if use_prompt_edit_2 and dd_prompt_2 else p_txt.prompt
                     p2.negative_prompt = dd_neg_prompt_2 if use_prompt_edit_2 and dd_neg_prompt_2 else p_txt.negative_prompt
 
+                    # get img2img sampler steps and update total tqdm
+                    _, sampler_steps = sd_samplers_common.setup_img2img_steps(p)
+                    if gen_count > 0:
+                        shared.total_tqdm.updateTotal(shared.total_tqdm._tqdm.total + (sampler_steps + 1) * gen_count)
+
                     for i in range(gen_count):
                         p2.image_mask = masks_b_pre[i]
                         if ( opts.dd_save_masks):
@@ -592,6 +597,11 @@ class DetectionDetailerScript(scripts.Script):
                     print(f"Processing {gen_count} model {label_a} detections for output generation {p_txt._idx + 1}.")
                     p.seed = start_seed
                     p.init_images = [init_image]
+
+                    # get img2img sampler steps and update total tqdm
+                    _, sampler_steps = sd_samplers_common.setup_img2img_steps(p)
+                    if gen_count > 0:
+                        shared.total_tqdm.updateTotal(shared.total_tqdm._tqdm.total + (sampler_steps + 1) * gen_count)
 
                     for i in range(gen_count):
                         p.image_mask = masks_a[i]
