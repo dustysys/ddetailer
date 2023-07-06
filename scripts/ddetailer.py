@@ -115,6 +115,8 @@ def ddetailer_extra_params(
         "DDetailer use prompt edit": use_prompt_edit,
         "DDetailer prompt": dd_prompt,
         "DDetailer neg prompt": dd_neg_prompt,
+        "DDetailer prompt 2": dd_prompt_2,
+        "DDetailer neg prompt 2": dd_neg_prompt_2,
         "DDetailer model a": dd_model_a,
         "DDetailer conf a": dd_conf_a,
         "DDetailer dilation a": dd_dilation_factor_a,
@@ -143,6 +145,10 @@ def ddetailer_extra_params(
         params.pop("DDetailer prompt")
     if not dd_neg_prompt:
         params.pop("DDetailer neg prompt")
+    if not dd_prompt_2:
+        params.pop("DDetailer prompt 2")
+    if not dd_neg_prompt_2:
+        params.pop("DDetailer neg prompt 2")
 
     return params
 
@@ -498,18 +504,24 @@ class DetectionDetailerScript(scripts.Script):
                     gen_count = len(masks_b_pre)
                     state.job_count += gen_count
                     print(f"Processing {gen_count} model {label_b_pre} detections for output generation {p_txt._idx + 1}.")
-                    p.seed = start_seed
-                    p.init_images = [init_image]
+
+                    p2 = copy(p)
+                    p2.seed = start_seed
+                    p2.init_images = [init_image]
+
+                    # prompt/negative_prompt for pre-processing
+                    p2.prompt = dd_prompt_2 if use_prompt_edit and dd_prompt_2 else p_txt.prompt
+                    p2.negative_prompt = dd_neg_prompt_2 if use_prompt_edit and dd_neg_prompt_2 else p_txt.negative_prompt
 
                     for i in range(gen_count):
-                        p.image_mask = masks_b_pre[i]
+                        p2.image_mask = masks_b_pre[i]
                         if ( opts.dd_save_masks):
-                            images.save_image(masks_b_pre[i], opts.outdir_ddetailer_masks, "", start_seed, p.prompt, opts.samples_format, p=p)
-                        processed = processing.process_images(p)
+                            images.save_image(masks_b_pre[i], opts.outdir_ddetailer_masks, "", start_seed, p2.prompt, opts.samples_format, p=p2)
+                        processed = processing.process_images(p2)
 
-                        p.seed = processed.seed + 1
-                        p.subseed = processed.subseed + 1
-                        p.init_images = processed.images
+                        p2.seed = processed.seed + 1
+                        p2.subseed = processed.subseed + 1
+                        p2.init_images = processed.images
 
                     if (gen_count > 0):
                         output_images[n] = processed.images[0]
