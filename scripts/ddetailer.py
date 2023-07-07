@@ -518,7 +518,7 @@ class DetectionDetailerScript(scripts.Script):
                     segmask_preview_b = create_segmask_preview(results_b_pre, init_image)
                     shared.state.current_image = segmask_preview_b
                     if ( opts.dd_save_previews):
-                        images.save_image(segmask_preview_b, opts.outdir_ddetailer_previews, "", start_seed, p.prompt, opts.samples_format, p=p)
+                        images.save_image(segmask_preview_b, opts.outdir_ddetailer_previews, "", start_seed, p.prompt, opts.samples_format, info=info, p=p)
                     gen_count = len(masks_b_pre)
                     state.job_count += gen_count
                     print(f"Processing {gen_count} model {label_b_pre} detections for output generation {p_txt._idx + 1}.")
@@ -539,7 +539,7 @@ class DetectionDetailerScript(scripts.Script):
                     for i in range(gen_count):
                         p2.image_mask = masks_b_pre[i]
                         if ( opts.dd_save_masks):
-                            images.save_image(masks_b_pre[i], opts.outdir_ddetailer_masks, "", start_seed, p2.prompt, opts.samples_format, p=p2)
+                            images.save_image(masks_b_pre[i], opts.outdir_ddetailer_masks, "", start_seed, p2.prompt, opts.samples_format, info=info, p=p2)
                         processed = processing.process_images(p2)
 
                         p2.seed = processed.seed + 1
@@ -590,7 +590,7 @@ class DetectionDetailerScript(scripts.Script):
                     segmask_preview_a = create_segmask_preview(results_a, init_image)
                     shared.state.current_image = segmask_preview_a
                     if ( opts.dd_save_previews):
-                        images.save_image(segmask_preview_a, opts.outdir_ddetailer_previews, "", start_seed, p.prompt, opts.samples_format, p=p)
+                        images.save_image(segmask_preview_a, opts.outdir_ddetailer_previews, "", start_seed, p.prompt, opts.samples_format, info=info, p=p)
                     gen_count = len(masks_a)
                     state.job_count += gen_count
                     print(f"Processing {gen_count} model {label_a} detections for output generation {p_txt._idx + 1}.")
@@ -605,7 +605,7 @@ class DetectionDetailerScript(scripts.Script):
                     for i in range(gen_count):
                         p.image_mask = masks_a[i]
                         if ( opts.dd_save_masks):
-                            images.save_image(masks_a[i], opts.outdir_ddetailer_masks, "", start_seed, p.prompt, opts.samples_format, p=p)
+                            images.save_image(masks_a[i], opts.outdir_ddetailer_masks, "", start_seed, p.prompt, opts.samples_format, info=info, p=p)
                         
                         processed = processing.process_images(p)
                         p.seed = processed.seed + 1
