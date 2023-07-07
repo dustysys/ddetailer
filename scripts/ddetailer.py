@@ -626,6 +626,8 @@ class DetectionDetailerScript(scripts.Script):
             if p.extra_generation_params.get("Noise multiplier") is not None:
                 p.extra_generation_params.pop("Noise multiplier")
 
+        p.close()
+
 def modeldataset(model_shortname):
     path = modelpath(model_shortname)
     if ("mmdet" in path and "segm" in path):
