@@ -415,7 +415,6 @@ class DetectionDetailerScript(scripts.Script):
 
         p._idx = getattr(p, "_idx", -1) + 1
 
-        initial_info = None
         seed, subseed = self.get_seed(p)
         p.seed = seed
         p.subseed = subseed
@@ -609,21 +608,16 @@ class DetectionDetailerScript(scripts.Script):
                             images.save_image(masks_a[i], opts.outdir_ddetailer_masks, "", start_seed, p.prompt, opts.samples_format, p=p)
                         
                         processed = processing.process_images(p)
-                        if initial_info is None:
-                            initial_info = processed.info
-                        info = processed.info
                         p.seed = processed.seed + 1
                         p.subseed = processed.subseed + 1
                         p.init_images = processed.images
                     
-                    if (gen_count > 0):
+                    if gen_count > 0 and len(processed.images) > 0:
                         output_images[n] = processed.images[0]
   
                 else: 
                     print(f"No model {label_a} detections for output generation {p_txt._idx + 1} with current settings.")
             state.job = f"Generation {p_txt._idx + 1} out of {state.job_count}"
-        if (initial_info is None):
-            initial_info = info
 
         if len(output_images) > 0:
             pp.image = output_images[0]
