@@ -621,6 +621,10 @@ class DetectionDetailerScript(scripts.Script):
 
         if len(output_images) > 0:
             pp.image = output_images[0]
+            pp.image.info["parameters"] = info
+
+            if p.extra_generation_params.get("Noise multiplier") is not None:
+                p.extra_generation_params.pop("Noise multiplier")
 
 def modeldataset(model_shortname):
     path = modelpath(model_shortname)
