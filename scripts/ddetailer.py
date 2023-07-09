@@ -99,6 +99,9 @@ def gr_show(visible=True):
 def gr_enable(interactive=True):
     return {"interactive": interactive, "__type__": "update"}
 
+def gr_open(open=True):
+    return {"open": open, "__type__": "update"}
+
 def ddetailer_extra_params(
     use_prompt_edit,
     use_prompt_edit_2,
@@ -246,22 +249,24 @@ class DetectionDetailerScript(scripts.Script):
                                 dd_offset_x_b = gr.Slider(label='X offset (B)', minimum=-200, maximum=200, step=1, value=0)
                                 dd_offset_y_b = gr.Slider(label='Y offset (B)', minimum=-200, maximum=200, step=1, value=0)
                             with gr.Row():
-                                dd_preprocess_b = gr.Checkbox(label='Inpaint model B detections before model A runs')
+                                dd_preprocess_b = gr.Checkbox(label='Inpaint model B detections before inpaint model A detections')
 
             with gr.Group(visible=False) as options:
-                gr.HTML(value="<p>Detection options:</p>", visible=(not is_img2img))
+                gr.HTML(value="<p>Inpainting options:</p>", visible=(not is_img2img))
                 with gr.Row():
-                    dd_mask_blur = gr.Slider(label='Mask blur ', minimum=0, maximum=64, step=1, value=4, visible=(not is_img2img))
-                    dd_denoising_strength = gr.Slider(label='Denoising strength (Inpaint)', minimum=0.0, maximum=1.0, step=0.01, value=0.4, visible=(not is_img2img))
+                    dd_mask_blur = gr.Slider(label='Mask blur', minimum=0, maximum=64, step=1, value=4, visible=(not is_img2img))
+                    dd_denoising_strength = gr.Slider(label='Denoising strength', minimum=0.0, maximum=1.0, step=0.01, value=0.4, visible=(not is_img2img))
 
                 with gr.Column(variant="compact"):
                     dd_inpaint_full_res = gr.Checkbox(label='Inpaint at full resolution ', value=True, visible = (not is_img2img))
                     dd_inpaint_full_res_padding = gr.Slider(label='Inpaint at full resolution padding, pixels ', minimum=0, maximum=256, step=4, value=32, visible=(not is_img2img))
 
-                    gr.HTML(value="<p>Low level options (0 value means use default setting value)</p>")
-                    dd_cfg_scale = gr.Slider(label='Use CFG Scale', minimum=0, maximum=30, step=0.5, value=0)
-                    dd_steps = gr.Slider(label='Use sampling steps', minimum=0, maximum=120, step=1, value=0)
-                    dd_noise_multiplier = gr.Slider(label='Use noise multiplier', minimum=0, maximum=1.5, step=0.01, value=0)
+                    with gr.Accordion("Advanced options", open=False) as advanced:
+                        gr.HTML(value="<p>Low level options (0 value means use default setting value)</p>")
+                        with gr.Column():
+                            dd_cfg_scale = gr.Slider(label='Use CFG Scale', minimum=0, maximum=30, step=0.5, value=0)
+                            dd_steps = gr.Slider(label='Use sampling steps', minimum=0, maximum=120, step=1, value=0)
+                            dd_noise_multiplier = gr.Slider(label='Use noise multiplier', minimum=0, maximum=1.5, step=0.01, value=0)
 
                 with gr.Group(visible=False) as operation:
                     gr.HTML(value="<p>A-B operation:</p>")
@@ -328,6 +333,33 @@ class DetectionDetailerScript(scripts.Script):
                 },
                 inputs=[use_prompt_edit_2],
                 outputs=[prompt_2]
+            )
+
+            dd_cfg_scale.change(
+                lambda value: {
+                    advanced:gr_open(True) if advanced.open == False and value > 0 else gr.update()
+                },
+                inputs=[dd_cfg_scale],
+                outputs=[advanced],
+                show_progress=False,
+            )
+
+            dd_steps.change(
+                lambda value: {
+                    advanced:gr_open(True) if advanced.open == False and value > 0 else gr.update()
+                },
+                inputs=[dd_steps],
+                outputs=[advanced],
+                show_progress=False,
+            )
+
+            dd_noise_multiplier.change(
+                lambda value: {
+                    advanced:gr_open(True) if advanced.open == False and value > 0 else gr.update()
+                },
+                inputs=[dd_noise_multiplier],
+                outputs=[advanced],
+                show_progress=False,
             )
 
             return [info, enabled,
