@@ -362,7 +362,7 @@ class DetectionDetailerScript(scripts.Script):
                 show_progress=False,
             )
 
-            return [info, enabled,
+            return [enabled,
                     use_prompt_edit,
                     use_prompt_edit_2,
                     dd_model_a,
@@ -425,7 +425,7 @@ class DetectionDetailerScript(scripts.Script):
         if getattr(p, "_disable_ddetailer", False):
             return
 
-    def postprocess_image(self, p, pp, info, enabled, use_prompt_edit, use_prompt_edit_2,
+    def postprocess_image(self, p, pp, enabled, use_prompt_edit, use_prompt_edit_2,
                      dd_model_a, 
                      dd_conf_a, dd_dilation_factor_a,
                      dd_offset_x_a, dd_offset_y_a,
