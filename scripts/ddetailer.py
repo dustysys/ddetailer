@@ -18,6 +18,8 @@ from basicsr.utils.download_util import load_file_from_url
 
 dd_models_path = os.path.join(models_path, "mmdet")
 
+scriptdir = scripts.basedir()
+
 def list_models(model_path):
         model_list = modelloader.load_models(model_path=model_path, ext_filter=[".pth"])
         
@@ -773,9 +775,9 @@ def combine_masks(masks):
 
 def on_ui_settings():
     shared.opts.add_option("dd_save_previews", shared.OptionInfo(False, "Save mask previews", section=("ddetailer", "Detection Detailer")))
-    shared.opts.add_option("outdir_ddetailer_previews", shared.OptionInfo("extensions/ddetailer/outputs/masks-previews", 'Output directory for mask previews', section=("ddetailer", "Detection Detailer")))
+    shared.opts.add_option("outdir_ddetailer_previews", shared.OptionInfo(f"{scriptdir}/outputs/masks-previews", 'Output directory for mask previews', section=("ddetailer", "Detection Detailer")))
     shared.opts.add_option("dd_save_masks", shared.OptionInfo(False, "Save masks", section=("ddetailer", "Detection Detailer")))
-    shared.opts.add_option("outdir_ddetailer_masks", shared.OptionInfo("extensions/ddetailer/outputs/masks", 'Output directory for masks', section=("ddetailer", "Detection Detailer")))
+    shared.opts.add_option("outdir_ddetailer_masks", shared.OptionInfo(f"{scriptdir}/outputs/masks", 'Output directory for masks', section=("ddetailer", "Detection Detailer")))
 
 def create_segmasks(results):
     segms = results[2]
