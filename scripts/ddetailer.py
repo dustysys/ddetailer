@@ -9,11 +9,12 @@ from pathlib import Path
 
 from copy import copy, deepcopy
 from modules import processing, images
-from modules import scripts, script_callbacks, shared, devices, modelloader, sd_samplers_common
+from modules import scripts, script_callbacks, shared, devices, modelloader, sd_models, sd_samplers_common, sd_vae, sd_samplers
 from modules.processing import Processed, StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img
 from modules.shared import opts, cmd_opts, state
 from modules.sd_models import model_hash
 from modules.paths import models_path
+from modules.ui import create_refresh_button
 from basicsr.utils.download_util import load_file_from_url
 
 dd_models_path = os.path.join(models_path, "mmdet")
@@ -119,6 +120,7 @@ def ddetailer_extra_params(
     dd_mask_blur, dd_denoising_strength,
     dd_inpaint_full_res, dd_inpaint_full_res_padding,
     dd_cfg_scale, dd_steps, dd_noise_multiplier,
+    dd_sampler, dd_checkpoint, dd_vae, dd_clipskip,
 ):
     params = {
         "DDetailer use prompt edit": use_prompt_edit,
@@ -137,9 +139,13 @@ def ddetailer_extra_params(
         "DDetailer inpaint full": dd_inpaint_full_res,
         "DDetailer inpaint padding": dd_inpaint_full_res_padding,
         # DDtailer extension
-        "DDetailer cfg": dd_cfg_scale,
+        "DDetailer CFG scale": dd_cfg_scale,
         "DDetailer steps": dd_steps,
         "DDetailer noise multiplier": dd_noise_multiplier,
+        "DDetailer sampler": dd_sampler,
+        "DDetailer checkpoint": dd_checkpoint,
+        "DDetailer VAE": dd_vae,
+        "DDetailer CLIP skip": dd_clipskip,
     }
 
     if dd_model_b != "None":
@@ -160,7 +166,24 @@ def ddetailer_extra_params(
     if not dd_neg_prompt_2:
         params.pop("DDetailer neg prompt 2")
 
+    if dd_clipskip == 0:
+        params.pop("DDetailer CLIP skip")
+    if dd_checkpoint in [ "Default", "None" ]:
+        params.pop("DDetailer checkpoint")
+    if dd_vae in [ "Default", "None" ]:
+        params.pop("DDetailer VAE")
+    if dd_sampler in [ "Default", "None" ]:
+        params.pop("DDetailer sampler")
+
     return params
+
+def dd_list_models():
+    # save current checkpoint_info and call register() again to restore
+    checkpoint_info = shared.sd_model.sd_checkpoint_info if shared.sd_model is not None else None
+    sd_models.list_models()
+    if checkpoint_info is not None:
+        # register saved checkpoint_info again
+        checkpoint_info.register()
 
 class DetectionDetailerScript(scripts.Script):
     def __init__(self):
@@ -180,7 +203,6 @@ class DetectionDetailerScript(scripts.Script):
                 enabled = gr.Checkbox(label="Enable", value=False, visible=True)
 
             model_list = list_models(dd_models_path)
-            model_list.insert(0, "None")
             if is_img2img:
                 info = gr.HTML("<p style=\"margin-bottom:0.75em\">Recommended settings: Use from inpaint tab, inpaint at full res ON, denoise <0.5</p>")
             else:
@@ -188,8 +210,8 @@ class DetectionDetailerScript(scripts.Script):
             with gr.Group(), gr.Tabs():
                 with gr.Tab("Primary"):
                     with gr.Row():
-                        dd_model_a = gr.Dropdown(label="Primary detection model (A):", choices=model_list,value = "None", visible=True, type="value")
-                        use_prompt_edit = gr.Checkbox(label="Use Prompt edit", elem_classes="prompt_edit_checkbox", value=False, interactive=False, visible=True)
+                        dd_model_a = gr.Dropdown(label="Primary detection model (A):", choices=["None"] + model_list, value=model_list[0], visible=True, type="value")
+                        use_prompt_edit = gr.Checkbox(label="Use Prompt edit", elem_classes="prompt_edit_checkbox", value=False, interactive=True, visible=True)
 
                     with gr.Group():
                         with gr.Group(visible=False) as prompt_1:
@@ -220,7 +242,7 @@ class DetectionDetailerScript(scripts.Script):
 
                 with gr.Tab("Secondary"):
                     with gr.Row():
-                        dd_model_b = gr.Dropdown(label="Secondary detection model (B) (optional):", choices=model_list,value = "None", visible =False, type="value")
+                        dd_model_b = gr.Dropdown(label="Secondary detection model (B) (optional):", choices=["None"] + model_list, value="None", visible=False, type="value")
                         use_prompt_edit_2 = gr.Checkbox(label="Use Prompt edit", elem_classes="prompt_edit_checkbox", value=False, interactive=False, visible=True)
 
                     with gr.Group():
@@ -264,11 +286,23 @@ class DetectionDetailerScript(scripts.Script):
                     dd_inpaint_full_res_padding = gr.Slider(label='Inpaint at full resolution padding, pixels ', minimum=0, maximum=256, step=4, value=32, visible=(not is_img2img))
 
                     with gr.Accordion("Advanced options", open=False) as advanced:
-                        gr.HTML(value="<p>Low level options (0 value means use default setting value)</p>")
+                        gr.HTML(value="<p>Low level options ('0' or 'Default' means use default setting value)</p>")
                         with gr.Column():
-                            dd_cfg_scale = gr.Slider(label='Use CFG Scale', minimum=0, maximum=30, step=0.5, value=0)
-                            dd_steps = gr.Slider(label='Use sampling steps', minimum=0, maximum=120, step=1, value=0)
-                            dd_noise_multiplier = gr.Slider(label='Use noise multiplier', minimum=0, maximum=1.5, step=0.01, value=0)
+                            with gr.Row():
+                                dd_noise_multiplier = gr.Slider(label='Use noise multiplier', minimum=0, maximum=1.5, step=0.01, value=0)
+                                dd_cfg_scale = gr.Slider(label='Use CFG Scale', minimum=0, maximum=30, step=0.5, value=0)
+                            with gr.Row():
+                                dd_sampler = gr.Dropdown(label='Use Sampling method', choices=["Default"] + sd_samplers.visible_sampler_names(), value="Default")
+                                dd_steps = gr.Slider(label='Use sampling steps', minimum=0, maximum=120, step=1, value=0)
+                        with gr.Column():
+                            with gr.Row():
+                                dd_checkpoint = gr.Dropdown(label='Use Checkpoint', choices=["Default"] + sd_models.checkpoint_tiles(), value="Default")
+                                create_refresh_button(dd_checkpoint, dd_list_models, lambda: {"choices": ["Default"] + sd_models.checkpoint_tiles()},"dd_refresh_checkpoint")
+
+                                dd_vae = gr.Dropdown(choices=["Default"] + list(sd_vae.vae_dict), value="Default", label="Use VAE", elem_id="dd_vae")
+                                create_refresh_button(dd_vae, sd_vae.refresh_vae_list, lambda: {"choices": ["Default"] + list(sd_vae.vae_dict)}, "dd_refresh_vae")
+
+                            dd_clipskip = gr.Slider(label='Use Clip skip', minimum=0, maximum=12, step=1, value=0)
 
                 with gr.Group(visible=False) as operation:
                     gr.HTML(value="<p>A-B operation:</p>")
@@ -306,9 +340,13 @@ class DetectionDetailerScript(scripts.Script):
                 (dd_denoising_strength, "DDetailer denoising"),
                 (dd_inpaint_full_res, "DDetailer inpaint full"),
                 (dd_inpaint_full_res_padding, "DDetailer inpaint padding"),
-                (dd_cfg_scale, "DDetailer cfg"),
+                (dd_cfg_scale, "DDetailer CFG scale"),
                 (dd_steps, "DDetailer steps"),
                 (dd_noise_multiplier, "DDetailer noise multiplier"),
+                (dd_clipskip, "DDetailer CLIP skip"),
+                (dd_sampler, "DDetailer sampler"),
+                (dd_checkpoint, "DDetailer checkpoint"),
+                (dd_vae, "DDetailer VAE"),
             )
 
             dd_model_b.change(
@@ -364,6 +402,42 @@ class DetectionDetailerScript(scripts.Script):
                 show_progress=False,
             )
 
+            dd_checkpoint.change(
+                lambda value: {
+                    advanced:gr_open(True) if advanced.open == False and value not in [ "Default", "None" ] else gr.update()
+                },
+                inputs=[dd_checkpoint],
+                outputs=[advanced],
+                show_progress=False,
+            )
+
+            dd_vae.change(
+                lambda value: {
+                    advanced:gr_open(True) if advanced.open == False and value not in [ "Default", "None" ] else gr.update()
+                },
+                inputs=[dd_vae],
+                outputs=[advanced],
+                show_progress=False,
+            )
+
+            dd_sampler.change(
+                lambda value: {
+                    advanced:gr_open(True) if advanced.open == False and value not in [ "Default", "None" ] else gr.update()
+                },
+                inputs=[dd_sampler],
+                outputs=[advanced],
+                show_progress=False,
+            )
+
+            dd_clipskip.change(
+                lambda value: {
+                    advanced:gr_open(True) if advanced.open == False and value > 0 else gr.update()
+                },
+                inputs=[dd_clipskip],
+                outputs=[advanced],
+                show_progress=False,
+            )
+
             return [enabled,
                     use_prompt_edit,
                     use_prompt_edit_2,
@@ -378,7 +452,8 @@ class DetectionDetailerScript(scripts.Script):
                     dd_prompt_2, dd_neg_prompt_2,
                     dd_mask_blur, dd_denoising_strength,
                     dd_inpaint_full_res, dd_inpaint_full_res_padding,
-                    dd_cfg_scale, dd_steps, dd_noise_multiplier
+                    dd_cfg_scale, dd_steps, dd_noise_multiplier,
+                    dd_sampler, dd_checkpoint, dd_vae, dd_clipskip,
             ]
 
     def get_seed(self, p) -> tuple[int, int]:
@@ -439,7 +514,8 @@ class DetectionDetailerScript(scripts.Script):
                      dd_prompt_2, dd_neg_prompt_2,
                      dd_mask_blur, dd_denoising_strength,
                      dd_inpaint_full_res, dd_inpaint_full_res_padding,
-                     dd_cfg_scale, dd_steps, dd_noise_multiplier):
+                     dd_cfg_scale, dd_steps, dd_noise_multiplier,
+                     dd_sampler, dd_checkpoint, dd_vae, dd_clipskip):
 
         if getattr(p, "_disable_ddetailer", False):
             return
@@ -456,9 +532,21 @@ class DetectionDetailerScript(scripts.Script):
         info = ""
         ddetail_count = 1
 
-        sampler_name = p.sampler_name
+        sampler_name = dd_sampler if dd_sampler not in [ "Default", "None" ] else p.sampler_name
         if sampler_name in ["PLMS", "UniPC"]:
             sampler_name = "Euler"
+
+        # setup override settings
+        checkpoint = dd_checkpoint if dd_checkpoint not in [ "Default", "None" ] else None
+        clipskip = dd_clipskip if dd_clipskip > 0 else None
+        vae = dd_vae if dd_vae not in [ "Default", "None" ] else None
+        override_settings = {}
+        if checkpoint is not None:
+            override_settings["sd_model_checkpoint"] = checkpoint
+        if vae is not None:
+            override_settings["sd_vae"] = vae
+        if clipskip is not None:
+            override_settings["CLIP_stop_at_last_layers"] = clipskip
 
         p_txt = copy(p)
 
@@ -481,6 +569,7 @@ class DetectionDetailerScript(scripts.Script):
             dd_mask_blur, dd_denoising_strength,
             dd_inpaint_full_res, dd_inpaint_full_res_padding,
             dd_cfg_scale, dd_steps, dd_noise_multiplier,
+            dd_sampler, dd_checkpoint, dd_vae, dd_clipskip,
         )
         p_txt.extra_generation_params.update(extra_params)
 
@@ -519,6 +608,7 @@ class DetectionDetailerScript(scripts.Script):
                 height=p_txt.height,
                 tiling=p_txt.tiling,
                 extra_generation_params=p_txt.extra_generation_params,
+                override_settings=override_settings,
             )
         p.scripts = self.script_filter(p_txt)
         p.script_args = deepcopy(p_txt.script_args)
