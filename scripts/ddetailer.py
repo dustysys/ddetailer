@@ -10,11 +10,12 @@ from pathlib import Path
 from copy import copy, deepcopy
 from modules import processing, images
 from modules import scripts, script_callbacks, shared, devices, modelloader, sd_models, sd_samplers_common, sd_vae, sd_samplers
+from modules.generation_parameters_copypaste import parse_generation_parameters
 from modules.processing import Processed, StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img
 from modules.shared import opts, cmd_opts, state
 from modules.sd_models import model_hash
 from modules.paths import models_path
-from modules.ui import create_refresh_button
+from modules.ui import create_refresh_button, plaintext_to_html
 from basicsr.utils.download_util import load_file_from_url
 
 dd_models_path = os.path.join(models_path, "mmdet")
@@ -186,6 +187,20 @@ def dd_list_models():
         checkpoint_info.register()
 
 class DetectionDetailerScript(scripts.Script):
+
+    init_on_after_callback = False
+    init_on_app_started = False
+
+    img2img_components = {}
+    txt2img_components = {}
+    components = {}
+
+    txt2img_ids = ["txt2img_prompt", "txt2img_neg_prompt", "txt2img_styles", "txt2img_steps", "txt2img_sampling", "txt2img_batch_count", "txt2img_batch_size",
+                "txt2img_cfg_scale", "txt2img_width", "txt2img_height", "txt2img_seed", "txt2img_denoising_strength" ]
+
+    img2img_ids = ["img2img_prompt", "img2img_neg_prompt", "img2img_styles", "img2img_steps", "img2img_sampling", "img2img_batch_count", "img2img_batch_size",
+                "img2img_cfg_scale", "img2img_width", "img2img_height", "img2img_seed", "img2img_denoising_strength" ]
+
     def __init__(self):
         super().__init__()
 
@@ -194,6 +209,24 @@ class DetectionDetailerScript(scripts.Script):
     
     def show(self, is_img2img):
         return scripts.AlwaysVisible
+
+    def after_component(self, component, **_kwargs):
+        DD = DetectionDetailerScript
+
+        elem_id = getattr(component, "elem_id", None)
+        if elem_id is None:
+            return
+
+        if elem_id in [ "txt2img_generate", "img2img_generate", "img2img_image" ]:
+            DD.components[elem_id] = component
+
+        if elem_id in DD.txt2img_ids:
+            DD.txt2img_components[elem_id] = component
+        elif elem_id in DD.img2img_ids:
+            DD.img2img_components[elem_id] = component
+
+        if elem_id in [ "img2img_gallery", "html_info_img2img", "generation_info_img2img", "txt2img_gallery", "html_info_txt2img", "generation_info_txt2img" ]:
+            DD.components[elem_id] = component
 
     def ui(self, is_img2img):
         import modules.ui
@@ -308,6 +341,14 @@ class DetectionDetailerScript(scripts.Script):
                     gr.HTML(value="<p>A-B operation:</p>")
                     with gr.Row():
                         dd_bitwise_op = gr.Radio(label='Bitwise operation', choices=['None', 'A&B', 'A-B'], value="None")
+
+                with gr.Accordion("Inpainting Helper", open=False):
+                    with gr.Column(variant="compact"):
+                        with gr.Row():
+                            if not is_img2img:
+                                dd_image = gr.Image(label='Image', type="pil")
+                        with gr.Row():
+                            dd_run_inpaint = gr.Button(value='Inpaint', interactive=True)
 
             dd_model_a.change(
                 lambda modelname: {
@@ -438,7 +479,7 @@ class DetectionDetailerScript(scripts.Script):
                 show_progress=False,
             )
 
-            return [enabled,
+        all_args = [
                     use_prompt_edit,
                     use_prompt_edit_2,
                     dd_model_a,
@@ -454,7 +495,162 @@ class DetectionDetailerScript(scripts.Script):
                     dd_inpaint_full_res, dd_inpaint_full_res_padding,
                     dd_cfg_scale, dd_steps, dd_noise_multiplier,
                     dd_sampler, dd_checkpoint, dd_vae, dd_clipskip,
-            ]
+        ]
+        # 29 arguments
+
+        def get_txt2img_components():
+            DD = DetectionDetailerScript
+            ret = []
+            for elem_id in DD.txt2img_ids:
+                ret.append(DD.txt2img_components[elem_id])
+            return ret
+        def get_img2img_components():
+            DD = DetectionDetailerScript
+            ret = []
+            for elem_id in DD.img2img_ids:
+                ret.append(DD.img2img_components[elem_id])
+            return ret
+
+        def run_inpaint(input, gallery, prompt, negative_prompt, styles, steps, sampler_name, batch_count, batch_size,
+                cfg_scale, width, height, seed, denoising_strength, *all_args):
+
+            # image from gr.Image() or gr.Gallery()
+            image = input if input is not None else import_image_from_gallery(gallery)
+            if image is None:
+                return gr.update(), gr.update(), "{}", ""
+
+            # convert to RGB
+            image = image.convert("RGB")
+
+            # try to read info from image
+            info, _ = images.read_info_from_image(image)
+
+            if info is not None:
+                params = parse_generation_parameters(info)
+                if "Seed" in params:
+                    seed = int(params["Seed"])
+
+            outpath = opts.outdir_samples or opts.outdir_txt2img_samples if not is_img2img else opts.outdir_samples or opts.outdir_img2img_samples
+
+            p = processing.StableDiffusionProcessingTxt2Img(
+                sd_model=shared.sd_model,
+                outpath_samples=outpath,
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                seed=seed,
+                styles=styles,
+                sampler_name=sampler_name,
+                batch_size=batch_size,
+                n_iter=1,
+                steps=steps,
+                cfg_scale=cfg_scale,
+                width=width,
+                height=height,
+            )
+            # set scripts and args
+            p.scripts = scripts.scripts_txt2img
+            p.script_args = all_args[29:]
+
+            # misc prepare
+            p.setup_prompts()
+            p.all_seeds = [ seed ]
+
+            # clear tqdm
+            shared.total_tqdm.clear()
+
+            # run inpainting
+            outimage = self._postprocess_image(p, image, *all_args[:29])
+            # restore info
+            info = outimage.info["parameters"]
+            #info = outimage.info["parameters"] if info is None else info
+            images.save_image(outimage, outpath, "", seed, p.prompt, opts.samples_format, info=info, p=p)
+
+            shared.total_tqdm.clear()
+
+            processed = Processed(p, [])
+
+            return image if input is None else gr.update(), [outimage], processed.js(), plaintext_to_html(info)
+
+        def import_image_from_gallery(gallery):
+            if len(gallery) == 0:
+                return gr.update()
+            if isinstance(gallery[0], dict) and gallery[0].get("name", None) is not None:
+                print("Import ", gallery[0]["name"])
+                image = Image.open(gallery[0]["name"])
+                return image
+            elif isinstance(gallery[0], np.ndarray):
+                return gallery[0]
+            else:
+                print("Invalid gallery image {type(gallery[0]}")
+            return None
+
+        def on_after_components(component, **kwargs):
+            DD = DetectionDetailerScript
+
+            elem_id = getattr(component, "elem_id", None)
+            if elem_id is None:
+                return
+
+            self.init_on_after_callback = True
+
+        # from supermerger GenParamGetter.py
+        def compare_components_with_ids(components: list[gr.Blocks], ids: list[int]):
+            return len(components) == len(ids) and all(component._id == _id for component, _id in zip(components, ids))
+
+        def on_app_started(demo, app):
+            DD = DetectionDetailerScript
+
+            for _id, is_txt2img in zip([DD.components["txt2img_generate"]._id, DD.components["img2img_generate"]._id], [True, False]):
+                dependencies = [x for x in demo.dependencies if x["trigger"] == "click" and _id in x["targets"]]
+                dependency = None
+
+                for d in dependencies:
+                    if "js" in d and d["js"] in [ "submit", "submit_img2img" ]:
+                        dependency = d
+
+                params = [params for params in demo.fns if compare_components_with_ids(params.inputs, dependency["inputs"])]
+
+                if is_txt2img:
+                    DD.components["txt2img_elem_ids"] = [x.elem_id if hasattr(x,"elem_id") else "None" for x in params[0].inputs]
+                else:
+                    DD.components["img2img_elem_ids"] = [x.elem_id if hasattr(x,"elem_id") else "None" for x in params[0].inputs]
+
+                if is_txt2img:
+                    DD.components["txt2img_params"] = params[0].inputs
+                else:
+                    DD.components["img2img_params"] = params[0].inputs
+
+
+            if not self.init_on_app_started:
+                if not is_img2img:
+                    script_args = DD.components["txt2img_params"][DD.components["txt2img_elem_ids"].index("txt2img_override_settings")+1:]
+                else:
+                    script_args = DD.components["img2img_params"][DD.components["img2img_elem_ids"].index("img2img_override_settings")+1:]
+
+                with demo:
+                    if not is_img2img:
+                        dd_run_inpaint.click(
+                            fn=run_inpaint,
+                            inputs=[dd_image, DD.components["txt2img_gallery"], *get_txt2img_components(), *all_args, *script_args],
+                            outputs=[dd_image, DD.components["txt2img_gallery"], DD.components["generation_info_txt2img"], DD.components["html_info_txt2img"]]
+                        )
+                    else:
+                        dd_run_inpaint.click(
+                            fn=run_inpaint,
+                            inputs=[DD.components["img2img_image"], DD.components["img2img_gallery"], *get_img2img_components(), *all_args, *script_args],
+                            outputs=[DD.components["img2img_image"], DD.components["img2img_gallery"], DD.components["generation_info_img2img"], DD.components["html_info_img2img"]]
+                        )
+
+            self.init_on_app_started = True
+
+        # set callback only once
+        if self.init_on_after_callback is False:
+            script_callbacks.on_after_component(on_after_components)
+
+        if self.init_on_app_started is False:
+            script_callbacks.on_app_started(on_app_started)
+
+        return [enabled, *all_args]
 
     def get_seed(self, p) -> tuple[int, int]:
         i = p._idx
@@ -478,6 +674,8 @@ class DetectionDetailerScript(scripts.Script):
         return seed, subseed
 
     def script_filter(self, p):
+        if p.scripts is None:
+            return None
         script_runner = copy(p.scripts)
 
         default = "dynamic_prompting,dynamic_thresholding,wildcards,wildcard_recursive"
@@ -502,26 +700,20 @@ class DetectionDetailerScript(scripts.Script):
         if getattr(p, "_disable_ddetailer", False):
             return
 
-    def postprocess_image(self, p, pp, enabled, use_prompt_edit, use_prompt_edit_2,
-                     dd_model_a, 
+    def _postprocess_image(self, p, image, use_prompt_edit, use_prompt_edit_2,
+                     dd_model_a,
                      dd_conf_a, dd_dilation_factor_a,
                      dd_offset_x_a, dd_offset_y_a,
                      dd_prompt, dd_neg_prompt,
-                     dd_preprocess_b, dd_bitwise_op, 
+                     dd_preprocess_b, dd_bitwise_op,
                      dd_model_b,
                      dd_conf_b, dd_dilation_factor_b,
-                     dd_offset_x_b, dd_offset_y_b,  
+                     dd_offset_x_b, dd_offset_y_b,
                      dd_prompt_2, dd_neg_prompt_2,
                      dd_mask_blur, dd_denoising_strength,
                      dd_inpaint_full_res, dd_inpaint_full_res_padding,
                      dd_cfg_scale, dd_steps, dd_noise_multiplier,
                      dd_sampler, dd_checkpoint, dd_vae, dd_clipskip):
-
-        if getattr(p, "_disable_ddetailer", False):
-            return
-
-        if not enabled:
-            return
 
         p._idx = getattr(p, "_idx", -1) + 1
 
@@ -578,7 +770,7 @@ class DetectionDetailerScript(scripts.Script):
         initial_noise_multiplier = dd_noise_multiplier if dd_noise_multiplier > 0 else None
 
         p = StableDiffusionProcessingImg2Img(
-                init_images = [pp.image],
+                init_images = [image],
                 resize_mode = 0,
                 denoising_strength = dd_denoising_strength,
                 mask = None,
@@ -611,7 +803,7 @@ class DetectionDetailerScript(scripts.Script):
                 override_settings=override_settings,
             )
         p.scripts = self.script_filter(p_txt)
-        p.script_args = deepcopy(p_txt.script_args)
+        p.script_args = deepcopy(p_txt.script_args) if p_txt.script_args is not None else {}
 
         p.do_not_save_grid = True
         p.do_not_save_samples = True
@@ -623,7 +815,7 @@ class DetectionDetailerScript(scripts.Script):
         for n in range(ddetail_count):
             devices.torch_gc()
             start_seed = seed + n
-            init_image = copy(pp.image)
+            init_image = copy(image)
             info = processing.create_infotext(p_txt, p_txt.all_prompts, p_txt.all_seeds, p_txt.all_subseeds, None, 0, 0)
 
             output_images.append(init_image)
@@ -657,7 +849,7 @@ class DetectionDetailerScript(scripts.Script):
 
                     # get img2img sampler steps and update total tqdm
                     _, sampler_steps = sd_samplers_common.setup_img2img_steps(p)
-                    if gen_count > 0:
+                    if gen_count > 0 and shared.total_tqdm._tqdm is not None:
                         shared.total_tqdm.updateTotal(shared.total_tqdm._tqdm.total + (sampler_steps + 1) * gen_count)
 
                     for i in range(gen_count):
@@ -723,7 +915,7 @@ class DetectionDetailerScript(scripts.Script):
 
                     # get img2img sampler steps and update total tqdm
                     _, sampler_steps = sd_samplers_common.setup_img2img_steps(p)
-                    if gen_count > 0:
+                    if gen_count > 0 and shared.total_tqdm._tqdm is not None:
                         shared.total_tqdm.updateTotal(shared.total_tqdm._tqdm.total + (sampler_steps + 1) * gen_count)
 
                     for i in range(gen_count):
@@ -744,11 +936,49 @@ class DetectionDetailerScript(scripts.Script):
             state.job = f"Generation {p_txt._idx + 1} out of {state.job_count}"
 
         if len(output_images) > 0:
-            pp.image = output_images[0]
-            pp.image.info["parameters"] = info
+            image = output_images[0]
+            image.info["parameters"] = info
 
             if p.extra_generation_params.get("Noise multiplier") is not None:
                 p.extra_generation_params.pop("Noise multiplier")
+
+        return image
+
+    def postprocess_image(self, p, pp, enabled, use_prompt_edit, use_prompt_edit_2,
+                     dd_model_a,
+                     dd_conf_a, dd_dilation_factor_a,
+                     dd_offset_x_a, dd_offset_y_a,
+                     dd_prompt, dd_neg_prompt,
+                     dd_preprocess_b, dd_bitwise_op,
+                     dd_model_b,
+                     dd_conf_b, dd_dilation_factor_b,
+                     dd_offset_x_b, dd_offset_y_b,
+                     dd_prompt_2, dd_neg_prompt_2,
+                     dd_mask_blur, dd_denoising_strength,
+                     dd_inpaint_full_res, dd_inpaint_full_res_padding,
+                     dd_cfg_scale, dd_steps, dd_noise_multiplier,
+                     dd_sampler, dd_checkpoint, dd_vae, dd_clipskip):
+
+        if getattr(p, "_disable_ddetailer", False):
+            return
+
+        if not enabled:
+            return
+
+        pp.image = self._postprocess_image(p, pp.image, use_prompt_edit, use_prompt_edit_2,
+                     dd_model_a,
+                     dd_conf_a, dd_dilation_factor_a,
+                     dd_offset_x_a, dd_offset_y_a,
+                     dd_prompt, dd_neg_prompt,
+                     dd_preprocess_b, dd_bitwise_op,
+                     dd_model_b,
+                     dd_conf_b, dd_dilation_factor_b,
+                     dd_offset_x_b, dd_offset_y_b,
+                     dd_prompt_2, dd_neg_prompt_2,
+                     dd_mask_blur, dd_denoising_strength,
+                     dd_inpaint_full_res, dd_inpaint_full_res_padding,
+                     dd_cfg_scale, dd_steps, dd_noise_multiplier,
+                     dd_sampler, dd_checkpoint, dd_vae, dd_clipskip)
 
         p.close()
 
