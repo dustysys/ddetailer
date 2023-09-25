@@ -4,6 +4,7 @@ import cv2
 from PIL import Image
 import numpy as np
 import gradio as gr
+import json
 import shutil
 from pathlib import Path
 
@@ -525,6 +526,7 @@ class DetectionDetailerScript(scripts.Script):
             # try to read info from image
             info, _ = images.read_info_from_image(image)
 
+            params = []
             if info is not None:
                 params = parse_generation_parameters(info)
                 if "Seed" in params:
@@ -560,9 +562,25 @@ class DetectionDetailerScript(scripts.Script):
 
             # run inpainting
             outimage = self._postprocess_image(p, image, *all_args[:29])
-            # restore info
+            # update info
             info = outimage.info["parameters"]
-            #info = outimage.info["parameters"] if info is None else info
+            nparams = parse_generation_parameters(info)
+            for k, v in nparams.items():
+                if "DDetailer" in k:
+                    params[k] = v
+
+            def quote(text):
+                if ',' not in str(text) and '\n' not in str(text) and ':' not in str(text):
+                    return text
+
+                return json.dumps(text, ensure_ascii=False)
+
+            prompt = params.pop("Prompt")
+            neg_prompt = params.pop("Negative prompt")
+            generation_params = ", ".join([k if k == v else f'{k}: {quote(v)}' for k, v in params.items() if v is not None])
+
+            info = prompt + "\nNegative prompt:" + neg_prompt + "\n" + generation_params
+
             images.save_image(outimage, outpath, "", seed, p.prompt, opts.samples_format, info=info, p=p)
 
             shared.total_tqdm.clear()
