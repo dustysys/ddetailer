@@ -15,7 +15,7 @@ from modules.generation_parameters_copypaste import parse_generation_parameters
 from modules.processing import Processed, StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img
 from modules.shared import opts, cmd_opts, state
 from modules.sd_models import model_hash
-from modules.paths import models_path
+from modules.paths import models_path, data_path
 from modules.ui import create_refresh_button, plaintext_to_html
 from basicsr.utils.download_util import load_file_from_url
 
@@ -586,6 +586,12 @@ class DetectionDetailerScript(scripts.Script):
             shared.total_tqdm.clear()
 
             processed = Processed(p, [])
+
+            try:
+                with open(os.path.join(data_path, "params.txt"), "w", encoding="utf8") as file:
+                    file.write(info)
+            except:
+                pass
 
             return image if input is None else gr.update(), [outimage], processed.js(), plaintext_to_html(info)
 
