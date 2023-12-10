@@ -1,4 +1,4 @@
-Detection and img2img have come a long way. This project is no longer maintained and there are now several alternatives for this function. See [adetailer](https://github.com/Bing-su/adetailer) for one implementation.
+Detection and img2img have come a long way. This project is no longer maintained and there are now several alternatives for this function. See [μ Detection Detailer](https://github.com/wkpark/uddetailer) or [adetailer](https://github.com/Bing-su/adetailer) implementations.
 
 # Detection Detailer
 An object detection and auto-mask extension for [Stable Diffusion web UI](https://github.com/AUTOMATIC1111/stable-diffusion-webui). See [Installation](https://github.com/dustysys/ddetailer#installation).
