@@ -80,6 +80,13 @@ class DetectionDetailerScript(scripts.Script):
         else:
             info = gr.HTML("")
         with gr.Group():
+            if not is_img2img:
+                with gr.Row():
+                    dd_prompt = gr.Textbox(label="dd_prompt", elem_id="t2i_dd_prompt", show_label=False, lines=3, placeholder="Ddetailer Prompt")
+
+                with gr.Row():
+                    dd_neg_prompt = gr.Textbox(label="dd_neg_prompt", elem_id="t2i_dd_neg_prompt", show_label=False, lines=2, placeholder="Ddetailer Negative prompt")
+
             with gr.Row():
                 dd_model_a = gr.Dropdown(label="Primary detection model (A)", choices=model_list,value = "None", visible=True, type="value")
             
@@ -144,7 +151,7 @@ class DetectionDetailerScript(scripts.Script):
             outputs =[dd_preprocess_b, dd_bitwise_op, dd_conf_b, dd_dilation_factor_b, dd_offset_x_b, dd_offset_y_b]
         )
         
-        return [info,
+        ret = [info,
                 dd_model_a, 
                 dd_conf_a, dd_dilation_factor_a,
                 dd_offset_x_a, dd_offset_y_a,
@@ -156,6 +163,10 @@ class DetectionDetailerScript(scripts.Script):
                 dd_mask_blur, dd_denoising_strength,
                 dd_inpaint_full_res, dd_inpaint_full_res_padding
         ]
+        if not is_img2img:
+            ret += [dd_prompt, dd_neg_prompt]
+        
+        return ret
 
     def run(self, p, info,
                      dd_model_a, 
@@ -167,7 +178,8 @@ class DetectionDetailerScript(scripts.Script):
                      dd_conf_b, dd_dilation_factor_b,
                      dd_offset_x_b, dd_offset_y_b,  
                      dd_mask_blur, dd_denoising_strength,
-                     dd_inpaint_full_res, dd_inpaint_full_res_padding):
+                     dd_inpaint_full_res, dd_inpaint_full_res_padding,
+                     dd_prompt=None, dd_neg_prompt=None):
 
         processing.fix_seed(p)
         initial_info = None
@@ -195,8 +207,8 @@ class DetectionDetailerScript(scripts.Script):
                     sd_model=p_txt.sd_model,
                     outpath_samples=p_txt.outpath_samples,
                     outpath_grids=p_txt.outpath_grids,
-                    prompt=p_txt.prompt,
-                    negative_prompt=p_txt.negative_prompt,
+                    prompt=p_txt.prompt if not dd_prompt else dd_prompt,
+                    negative_prompt=p_txt.negative_prompt  if not dd_neg_prompt else dd_neg_prompt,
                     styles=p_txt.styles,
                     seed=p_txt.seed,
                     subseed=p_txt.subseed,
@@ -316,6 +328,8 @@ class DetectionDetailerScript(scripts.Script):
                         processed = processing.process_images(p)
                         if initial_info is None:
                             initial_info = processed.info
+                        if is_txt2img:
+                            initial_info += f", raw prompt: \"{p_txt.prompt}\", raw negative prompt: \"{p_txt.negative_prompt}\"".replace("\n", " ")
                         p.seed = processed.seed + 1
                         p.init_images = processed.images
                     
