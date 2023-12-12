@@ -4,7 +4,9 @@ import cv2
 from PIL import Image
 import numpy as np
 import gradio as gr
+import shutil
 
+from copy import copy
 from modules import processing, images
 from modules import scripts, script_callbacks, shared, devices, modelloader
 from modules.processing import Processed, StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img
@@ -43,20 +45,50 @@ def list_models(model_path):
 
 def startup():
     from launch import is_installed, run
+    import torch
+    legacy = torch.__version__.split(".")[0] < "2"
     if not is_installed("mmdet"):
         python = sys.executable
         run(f'"{python}" -m pip install -U openmim', desc="Installing openmim", errdesc="Couldn't install openmim")
-        run(f'"{python}" -m mim install mmcv-full', desc=f"Installing mmcv-full", errdesc=f"Couldn't install mmcv-full")
-        run(f'"{python}" -m pip install mmdet', desc=f"Installing mmdet", errdesc=f"Couldn't install mmdet")
+        if legacy:
+            run(f'"{python}" -m mim install mmcv-full', desc=f"Installing mmcv-full", errdesc=f"Couldn't install mmcv-full")
+            run(f'"{python}" -m pip install mmdet==2.28.2', desc=f"Installing mmdet", errdesc=f"Couldn't install mmdet")
+        else:
+            run(f'"{python}" -m mim install mmcv>==2.0.0', desc=f"Installing mmcv", errdesc=f"Couldn't install mmcv")
+            run(f'"{python}" -m pip install mmdet>=3', desc=f"Installing mmdet", errdesc=f"Couldn't install mmdet")
 
+    bbox_path = os.path.join(dd_models_path, "bbox")
+    segm_path = os.path.join(dd_models_path, "segm")
     if (len(list_models(dd_models_path)) == 0):
         print("No detection models found, downloading...")
-        bbox_path = os.path.join(dd_models_path, "bbox")
-        segm_path = os.path.join(dd_models_path, "segm")
         load_file_from_url("https://huggingface.co/dustysys/ddetailer/resolve/main/mmdet/bbox/mmdet_anime-face_yolov3.pth", bbox_path)
-        load_file_from_url("https://huggingface.co/dustysys/ddetailer/raw/main/mmdet/bbox/mmdet_anime-face_yolov3.py", bbox_path)
-        load_file_from_url("https://huggingface.co/dustysys/ddetailer/resolve/main/mmdet/segm/mmdet_dd-person_mask2former.pth", segm_path)
-        load_file_from_url("https://huggingface.co/dustysys/ddetailer/raw/main/mmdet/segm/mmdet_dd-person_mask2former.py", segm_path)
+        if legacy:
+            load_file_from_url("https://huggingface.co/dustysys/ddetailer/resolve/main/mmdet/segm/mmdet_dd-person_mask2former.pth", segm_path)
+        else:
+            load_file_from_url(
+                "https://download.openmmlab.com/mmdetection/v3.0/mask2former/mask2former_r50_8xb2-lsj-50e_coco/mask2former_r50_8xb2-lsj-50e_coco_20220506_191028-41b088b6.pth",
+                segm_path,
+                file_name="mmdet_dd-person_mask2former.pth")
+
+    print("Check config files...")
+    config_dir = os.path.join(scripts.basedir(), "config")
+    if legacy:
+        configs = [ "mmdet_anime-face_yolov3.py", "mmdet_dd-person_mask2former.py" ]
+    else:
+        configs = [ "mmdet_anime-face_yolov3-v3.py", "mmdet_dd-person_mask2former-v3.py", "mask2former_r50_8xb2-lsj-50e_coco-panoptic.py", "coco_panoptic.py" ]
+
+    destdir = bbox_path
+    for confpy in configs:
+        conf = os.path.join(config_dir, confpy)
+        if not legacy:
+            confpy = confpy.replace("-v3.py", ".py")
+        dest = os.path.join(destdir, confpy)
+        if not os.path.exists(dest):
+            print(f"Copy config file: {confpy}..")
+            shutil.copy(conf, dest)
+        destdir = segm_path
+
+    print("Done")
 
 startup()
 
@@ -64,100 +96,132 @@ def gr_show(visible=True):
     return {"visible": visible, "__type__": "update"}
 
 class DetectionDetailerScript(scripts.Script):
+    def __init__(self):
+        super().__init__()
+
     def title(self):
         return "Detection Detailer"
     
     def show(self, is_img2img):
-        return True
+        return scripts.AlwaysVisible
 
     def ui(self, is_img2img):
         import modules.ui
 
-        model_list = list_models(dd_models_path)
-        model_list.insert(0, "None")
-        if is_img2img:
-            info = gr.HTML("<p style=\"margin-bottom:0.75em\">Recommended settings: Use from inpaint tab, inpaint at full res ON, denoise <0.5</p>")
+        with gr.Accordion("Detection Detailer", open=False):
+            with gr.Row():
+                enabled = gr.Checkbox(label="Enable", value=False, visible=True)
+
+            model_list = list_models(dd_models_path)
+            model_list.insert(0, "None")
+            if is_img2img:
+                info = gr.HTML("<p style=\"margin-bottom:0.75em\">Recommended settings: Use from inpaint tab, inpaint at full res ON, denoise <0.5</p>")
+            else:
+                info = gr.HTML("")
+            with gr.Group():
+                with gr.Row():
+                    dd_model_a = gr.Dropdown(label="Primary detection model (A)", choices=model_list,value = "None", visible=True, type="value")
+
+                with gr.Row():
+                    dd_conf_a = gr.Slider(label='Detection confidence threshold % (A)', minimum=0, maximum=100, step=1, value=30, visible=False)
+                    dd_dilation_factor_a = gr.Slider(label='Dilation factor (A)', minimum=0, maximum=255, step=1, value=4, visible=False)
+
+                with gr.Row():
+                    dd_offset_x_a = gr.Slider(label='X offset (A)', minimum=-200, maximum=200, step=1, value=0, visible=False)
+                    dd_offset_y_a = gr.Slider(label='Y offset (A)', minimum=-200, maximum=200, step=1, value=0, visible=False)
+
+                with gr.Row():
+                    dd_preprocess_b = gr.Checkbox(label='Inpaint model B detections before model A runs', value=False, visible=False)
+                    dd_bitwise_op = gr.Radio(label='Bitwise operation', choices=['None', 'A&B', 'A-B'], value="None", visible=False)
+
+            br = gr.HTML("<br>")
+
+            with gr.Group():
+                with gr.Row():
+                    dd_model_b = gr.Dropdown(label="Secondary detection model (B) (optional)", choices=model_list,value = "None", visible =False, type="value")
+
+                with gr.Row():
+                    dd_conf_b = gr.Slider(label='Detection confidence threshold % (B)', minimum=0, maximum=100, step=1, value=30, visible=False)
+                    dd_dilation_factor_b = gr.Slider(label='Dilation factor (B)', minimum=0, maximum=255, step=1, value=4, visible=False)
+
+                with gr.Row():
+                    dd_offset_x_b = gr.Slider(label='X offset (B)', minimum=-200, maximum=200, step=1, value=0, visible=False)
+                    dd_offset_y_b = gr.Slider(label='Y offset (B)', minimum=-200, maximum=200, step=1, value=0, visible=False)
+
+            with gr.Group():
+                with gr.Row():
+                    dd_mask_blur = gr.Slider(label='Mask blur ', minimum=0, maximum=64, step=1, value=4, visible=(not is_img2img))
+                    dd_denoising_strength = gr.Slider(label='Denoising strength (Inpaint)', minimum=0.0, maximum=1.0, step=0.01, value=0.4, visible=(not is_img2img))
+
+                with gr.Row():
+                    dd_inpaint_full_res = gr.Checkbox(label='Inpaint at full resolution ', value=True, visible = (not is_img2img))
+                    dd_inpaint_full_res_padding = gr.Slider(label='Inpaint at full resolution padding, pixels ', minimum=0, maximum=256, step=4, value=32, visible=(not is_img2img))
+
+            dd_model_a.change(
+                lambda modelname: {
+                    dd_model_b:gr_show( modelname != "None" ),
+                    dd_conf_a:gr_show( modelname != "None" ),
+                    dd_dilation_factor_a:gr_show( modelname != "None"),
+                    dd_offset_x_a:gr_show( modelname != "None" ),
+                    dd_offset_y_a:gr_show( modelname != "None" )
+
+                },
+                inputs= [dd_model_a],
+                outputs =[dd_model_b, dd_conf_a, dd_dilation_factor_a, dd_offset_x_a, dd_offset_y_a]
+            )
+
+            dd_model_b.change(
+                lambda modelname: {
+                    dd_preprocess_b:gr_show( modelname != "None" ),
+                    dd_bitwise_op:gr_show( modelname != "None" ),
+                    dd_conf_b:gr_show( modelname != "None" ),
+                    dd_dilation_factor_b:gr_show( modelname != "None"),
+                    dd_offset_x_b:gr_show( modelname != "None" ),
+                    dd_offset_y_b:gr_show( modelname != "None" )
+                },
+                inputs= [dd_model_b],
+                outputs =[dd_preprocess_b, dd_bitwise_op, dd_conf_b, dd_dilation_factor_b, dd_offset_x_b, dd_offset_y_b]
+            )
+
+            return [info, enabled,
+                    dd_model_a,
+                    dd_conf_a, dd_dilation_factor_a,
+                    dd_offset_x_a, dd_offset_y_a,
+                    dd_preprocess_b, dd_bitwise_op,
+                    br,
+                    dd_model_b,
+                    dd_conf_b, dd_dilation_factor_b,
+                    dd_offset_x_b, dd_offset_y_b,
+                    dd_mask_blur, dd_denoising_strength,
+                    dd_inpaint_full_res, dd_inpaint_full_res_padding
+            ]
+
+    def get_seed(self, p) -> tuple[int, int]:
+        i = p.iteration
+
+        if not p.all_seeds:
+            seed = p.seed
+        elif i < len(p.all_seeds):
+            seed = p.all_seeds[i]
         else:
-            info = gr.HTML("")
-        with gr.Group():
-            with gr.Row():
-                dd_model_a = gr.Dropdown(label="Primary detection model (A)", choices=model_list,value = "None", visible=True, type="value")
-            
-            with gr.Row():
-                dd_conf_a = gr.Slider(label='Detection confidence threshold % (A)', minimum=0, maximum=100, step=1, value=30, visible=False)
-                dd_dilation_factor_a = gr.Slider(label='Dilation factor (A)', minimum=0, maximum=255, step=1, value=4, visible=False)
+            j = i % len(p.all_seeds)
+            seed = p.all_seeds[j]
 
-            with gr.Row():
-                dd_offset_x_a = gr.Slider(label='X offset (A)', minimum=-200, maximum=200, step=1, value=0, visible=False)
-                dd_offset_y_a = gr.Slider(label='Y offset (A)', minimum=-200, maximum=200, step=1, value=0, visible=False)
-            
-            with gr.Row():
-                dd_preprocess_b = gr.Checkbox(label='Inpaint model B detections before model A runs', value=False, visible=False)
-                dd_bitwise_op = gr.Radio(label='Bitwise operation', choices=['None', 'A&B', 'A-B'], value="None", visible=False)  
-        
-        br = gr.HTML("<br>")
+        if not p.all_subseeds:
+            subseed = p.subseed
+        elif i < len(p.all_subseeds):
+            subseed = p.all_subseeds[i]
+        else:
+            j = i % len(p.all_subseeds)
+            subseed = p.all_subseeds[j]
 
-        with gr.Group():
-            with gr.Row():
-                dd_model_b = gr.Dropdown(label="Secondary detection model (B) (optional)", choices=model_list,value = "None", visible =False, type="value")
+        return seed, subseed
 
-            with gr.Row():
-                dd_conf_b = gr.Slider(label='Detection confidence threshold % (B)', minimum=0, maximum=100, step=1, value=30, visible=False)
-                dd_dilation_factor_b = gr.Slider(label='Dilation factor (B)', minimum=0, maximum=255, step=1, value=4, visible=False)
-            
-            with gr.Row():
-                dd_offset_x_b = gr.Slider(label='X offset (B)', minimum=-200, maximum=200, step=1, value=0, visible=False)
-                dd_offset_y_b = gr.Slider(label='Y offset (B)', minimum=-200, maximum=200, step=1, value=0, visible=False)
-        
-        with gr.Group():
-            with gr.Row():
-                dd_mask_blur = gr.Slider(label='Mask blur ', minimum=0, maximum=64, step=1, value=4, visible=(not is_img2img))
-                dd_denoising_strength = gr.Slider(label='Denoising strength (Inpaint)', minimum=0.0, maximum=1.0, step=0.01, value=0.4, visible=(not is_img2img))
-            
-            with gr.Row():
-                dd_inpaint_full_res = gr.Checkbox(label='Inpaint at full resolution ', value=True, visible = (not is_img2img))
-                dd_inpaint_full_res_padding = gr.Slider(label='Inpaint at full resolution padding, pixels ', minimum=0, maximum=256, step=4, value=32, visible=(not is_img2img))
+    def process(self, p, *args):
+        if getattr(p, "_disable_ddetailer", False):
+            return
 
-        dd_model_a.change(
-            lambda modelname: {
-                dd_model_b:gr_show( modelname != "None" ),
-                dd_conf_a:gr_show( modelname != "None" ),
-                dd_dilation_factor_a:gr_show( modelname != "None"),
-                dd_offset_x_a:gr_show( modelname != "None" ),
-                dd_offset_y_a:gr_show( modelname != "None" )
-
-            },
-            inputs= [dd_model_a],
-            outputs =[dd_model_b, dd_conf_a, dd_dilation_factor_a, dd_offset_x_a, dd_offset_y_a]
-        )
-
-        dd_model_b.change(
-            lambda modelname: {
-                dd_preprocess_b:gr_show( modelname != "None" ),
-                dd_bitwise_op:gr_show( modelname != "None" ),
-                dd_conf_b:gr_show( modelname != "None" ),
-                dd_dilation_factor_b:gr_show( modelname != "None"),
-                dd_offset_x_b:gr_show( modelname != "None" ),
-                dd_offset_y_b:gr_show( modelname != "None" )
-            },
-            inputs= [dd_model_b],
-            outputs =[dd_preprocess_b, dd_bitwise_op, dd_conf_b, dd_dilation_factor_b, dd_offset_x_b, dd_offset_y_b]
-        )
-        
-        return [info,
-                dd_model_a, 
-                dd_conf_a, dd_dilation_factor_a,
-                dd_offset_x_a, dd_offset_y_a,
-                dd_preprocess_b, dd_bitwise_op, 
-                br,
-                dd_model_b,
-                dd_conf_b, dd_dilation_factor_b,
-                dd_offset_x_b, dd_offset_y_b,  
-                dd_mask_blur, dd_denoising_strength,
-                dd_inpaint_full_res, dd_inpaint_full_res_padding
-        ]
-
-    def run(self, p, info,
+    def postprocess_image(self, p, pp, info, enabled,
                      dd_model_a, 
                      dd_conf_a, dd_dilation_factor_a,
                      dd_offset_x_a, dd_offset_y_a,
@@ -169,63 +233,65 @@ class DetectionDetailerScript(scripts.Script):
                      dd_mask_blur, dd_denoising_strength,
                      dd_inpaint_full_res, dd_inpaint_full_res_padding):
 
-        processing.fix_seed(p)
+        if getattr(p, "_disable_ddetailer", False):
+            return
+
+        if not enabled:
+            return
+
         initial_info = None
-        seed = p.seed
-        p.batch_size = 1
-        ddetail_count = p.n_iter
-        p.n_iter = 1
+        seed, subseed = self.get_seed(p)
+        p.seed = seed
+        p.subseed = subseed
+
+        info = ""
+        ddetail_count = 1
+
+        p_txt = copy(p)
+
+        p = StableDiffusionProcessingImg2Img(
+                init_images = [pp.image],
+                resize_mode = 0,
+                denoising_strength = dd_denoising_strength,
+                mask = None,
+                mask_blur= dd_mask_blur,
+                inpainting_fill = 1,
+                inpaint_full_res = dd_inpaint_full_res,
+                inpaint_full_res_padding= dd_inpaint_full_res_padding,
+                inpainting_mask_invert= 0,
+                sd_model=p_txt.sd_model,
+                outpath_samples=p_txt.outpath_samples,
+                outpath_grids=p_txt.outpath_grids,
+                prompt=p_txt.prompt,
+                negative_prompt=p_txt.negative_prompt,
+                styles=p_txt.styles,
+                seed=p_txt.seed,
+                subseed=p_txt.subseed,
+                subseed_strength=p_txt.subseed_strength,
+                seed_resize_from_h=p_txt.seed_resize_from_h,
+                seed_resize_from_w=p_txt.seed_resize_from_w,
+                sampler_name=p_txt.sampler_name,
+                batch_size=1,
+                n_iter=1,
+                steps=p_txt.steps,
+                cfg_scale=p_txt.cfg_scale,
+                width=p_txt.width,
+                height=p_txt.height,
+                tiling=p_txt.tiling,
+            )
         p.do_not_save_grid = True
         p.do_not_save_samples = True
-        is_txt2img = isinstance(p, StableDiffusionProcessingTxt2Img)
-        if (not is_txt2img):
-            orig_image = p.init_images[0]
-        else:
-            p_txt = p
-            p = StableDiffusionProcessingImg2Img(
-                    init_images = None,
-                    resize_mode = 0,
-                    denoising_strength = dd_denoising_strength,
-                    mask = None,
-                    mask_blur= dd_mask_blur,
-                    inpainting_fill = 1,
-                    inpaint_full_res = dd_inpaint_full_res,
-                    inpaint_full_res_padding= dd_inpaint_full_res_padding,
-                    inpainting_mask_invert= 0,
-                    sd_model=p_txt.sd_model,
-                    outpath_samples=p_txt.outpath_samples,
-                    outpath_grids=p_txt.outpath_grids,
-                    prompt=p_txt.prompt,
-                    negative_prompt=p_txt.negative_prompt,
-                    styles=p_txt.styles,
-                    seed=p_txt.seed,
-                    subseed=p_txt.subseed,
-                    subseed_strength=p_txt.subseed_strength,
-                    seed_resize_from_h=p_txt.seed_resize_from_h,
-                    seed_resize_from_w=p_txt.seed_resize_from_w,
-                    sampler_name=p_txt.sampler_name,
-                    n_iter=p_txt.n_iter,
-                    steps=p_txt.steps,
-                    cfg_scale=p_txt.cfg_scale,
-                    width=p_txt.width,
-                    height=p_txt.height,
-                    tiling=p_txt.tiling,
-                )
-            p.do_not_save_grid = True
-            p.do_not_save_samples = True
+
+        p._disable_ddetailer = True
+
         output_images = []
         state.job_count = ddetail_count
         for n in range(ddetail_count):
             devices.torch_gc()
             start_seed = seed + n
-            if ( is_txt2img ):
-                print(f"Processing initial image for output generation {n + 1}.")
-                p_txt.seed = start_seed
-                processed = processing.process_images(p_txt)
-                init_image = processed.images[0]   
-            else: 
-                init_image = orig_image
-            
+            init_image = copy(pp.image)
+            info = processing.create_infotext(p_txt, p_txt.all_prompts, p_txt.all_seeds, p_txt.all_subseeds, None, 0, 0)
+
             output_images.append(init_image)
             masks_a = []
             masks_b_pre = []
@@ -245,7 +311,7 @@ class DetectionDetailerScript(scripts.Script):
                         images.save_image(segmask_preview_b, opts.outdir_ddetailer_previews, "", start_seed, p.prompt, opts.samples_format, p=p)
                     gen_count = len(masks_b_pre)
                     state.job_count += gen_count
-                    print(f"Processing {gen_count} model {label_b_pre} detections for output generation {n + 1}.")
+                    print(f"Processing {gen_count} model {label_b_pre} detections for output generation {p_txt.iteration + 1}.")
                     p.seed = start_seed
                     p.init_images = [init_image]
 
@@ -254,7 +320,9 @@ class DetectionDetailerScript(scripts.Script):
                         if ( opts.dd_save_masks):
                             images.save_image(masks_b_pre[i], opts.outdir_ddetailer_masks, "", start_seed, p.prompt, opts.samples_format, p=p)
                         processed = processing.process_images(p)
+
                         p.seed = processed.seed + 1
+                        p.subseed = processed.subseed + 1
                         p.init_images = processed.images
 
                     if (gen_count > 0):
@@ -262,7 +330,7 @@ class DetectionDetailerScript(scripts.Script):
                         init_image = processed.images[0]
 
                 else:
-                    print(f"No model B detections for output generation {n} with current settings.")
+                    print(f"No model B detections for output generation {p_txt.iteration + 1} with current settings.")
 
             # Primary run
             if (dd_model_a != "None"):
@@ -304,7 +372,7 @@ class DetectionDetailerScript(scripts.Script):
                         images.save_image(segmask_preview_a, opts.outdir_ddetailer_previews, "", start_seed, p.prompt, opts.samples_format, p=p)
                     gen_count = len(masks_a)
                     state.job_count += gen_count
-                    print(f"Processing {gen_count} model {label_a} detections for output generation {n + 1}.")
+                    print(f"Processing {gen_count} model {label_a} detections for output generation {p_txt.iteration + 1}.")
                     p.seed = start_seed
                     p.init_images = [init_image]
 
@@ -316,21 +384,22 @@ class DetectionDetailerScript(scripts.Script):
                         processed = processing.process_images(p)
                         if initial_info is None:
                             initial_info = processed.info
+                        info = processed.info
                         p.seed = processed.seed + 1
+                        p.subseed = processed.subseed + 1
                         p.init_images = processed.images
                     
                     if (gen_count > 0):
                         output_images[n] = processed.images[0]
-                        if ( opts.samples_save ):
-                            images.save_image(processed.images[0], p.outpath_samples, "", start_seed, p.prompt, opts.samples_format, info=initial_info, p=p)
   
                 else: 
-                    print(f"No model {label_a} detections for output generation {n} with current settings.")
-            state.job = f"Generation {n + 1} out of {state.job_count}"
+                    print(f"No model {label_a} detections for output generation {p_txt.iteration + 1} with current settings.")
+            state.job = f"Generation {p_txt.iteration + 1} out of {state.job_count}"
         if (initial_info is None):
             initial_info = "No detections found."
 
-        return Processed(p, output_images, seed, initial_info)
+        if len(output_images) > 0:
+            pp.image = output_images[0]
 
 def modeldataset(model_shortname):
     path = modelpath(model_shortname)
@@ -357,6 +426,8 @@ def create_segmask_preview(results, image):
     labels = results[0]
     bboxes = results[1]
     segms = results[2]
+    if not mmcv_legacy:
+        scores = results[3]
 
     cv2_image = np.array(image)
     cv2_image = cv2_image[:, :, ::-1].copy()
@@ -374,7 +445,10 @@ def create_segmask_preview(results, image):
         cv2_image = np.where(cv2_mask_rgb == 255, color_image, cv2_image)
         text_color = tuple([int(x) for x in ( color[0][0] - 100 )])
         name = labels[i]
-        score = bboxes[i][4]
+        if mmcv_legacy:
+            score = bboxes[i][4]
+        else:
+            score = scores[i]
         score = str(score)[:4]
         text = name + ":" + score
         cv2.putText(cv2_image, text, (centroid_x - 30, centroid_y), cv2.FONT_HERSHEY_DUPLEX, 0.4, text_color, 1, cv2.LINE_AA)
@@ -455,9 +529,16 @@ def create_segmasks(results):
     return segmasks
 
 import mmcv
-from mmdet.core import get_classes
-from mmdet.apis import (inference_detector,
+
+try:
+    from mmdet.core import get_classes
+    from mmdet.apis import (inference_detector,
                         init_detector)
+    mmcv_legacy = True
+except ImportError:
+    from mmdet.evaluation import get_classes
+    from mmdet.apis import inference_detector, init_detector
+    mmcv_legacy = False
 
 def get_device():
     device_id = shared.cmd_opts.device_id
@@ -479,27 +560,52 @@ def inference_mmdet_segm(image, modelname, conf_thres, label):
     model_checkpoint = modelpath(modelname)
     model_config = os.path.splitext(model_checkpoint)[0] + ".py"
     model_device = get_device()
-    model = init_detector(model_config, model_checkpoint, device=model_device)
-    mmdet_results = inference_detector(model, np.array(image))
-    bbox_results, segm_results = mmdet_results
+    if mmcv_legacy:
+        model = init_detector(model_config, model_checkpoint, device=model_device)
+        mmdet_results = inference_detector(model, np.array(image))
+        bbox_results, segm_results = mmdet_results
+    else:
+        model = init_detector(model_config, model_checkpoint, palette="random", device=model_device)
+        mmdet_results = inference_detector(model, np.array(image)).pred_instances
+        bboxes = mmdet_results.bboxes.numpy()
+
     dataset = modeldataset(modelname)
     classes = get_classes(dataset)
-    labels = [
-        np.full(bbox.shape[0], i, dtype=np.int32)
-        for i, bbox in enumerate(bbox_results)
-    ]
-    n,m = bbox_results[0].shape
+    if mmcv_legacy:
+        labels = [
+            np.full(bbox.shape[0], i, dtype=np.int32)
+            for i, bbox in enumerate(bbox_results)
+        ]
+        n, m = bbox_results[0].shape
+    else:
+        n, m = bboxes.shape
     if (n == 0):
-        return [[],[],[]]
-    labels = np.concatenate(labels)
-    bboxes = np.vstack(bbox_results)
-    segms = mmcv.concat_list(segm_results)
-    filter_inds = np.where(bboxes[:,-1] > conf_thres)[0]
-    results = [[],[],[]]
+        if mmcv_legacy:
+            return [[],[],[]]
+        else:
+            return [[],[],[],[]]
+
+    if mmcv_legacy:
+        labels = np.concatenate(labels)
+        bboxes = np.vstack(bbox_results)
+        segms = mmcv.concat_list(segm_results)
+
+        filter_inds = np.where(bboxes[:,-1] > conf_thres)[0]
+        results = [[],[],[]]
+    else:
+        labels = mmdet_results.labels
+        segms = mmdet_results.masks.numpy()
+        scores = mmdet_results.scores.numpy()
+
+        filter_inds = np.where(mmdet_results.scores > conf_thres)[0]
+        results = [[],[],[],[]]
+
     for i in filter_inds:
         results[0].append(label + "-" + classes[labels[i]])
         results[1].append(bboxes[i])
         results[2].append(segms[i])
+        if not mmcv_legacy:
+            results[3].append(scores[i])
 
     return results
 
@@ -507,29 +613,56 @@ def inference_mmdet_bbox(image, modelname, conf_thres, label):
     model_checkpoint = modelpath(modelname)
     model_config = os.path.splitext(model_checkpoint)[0] + ".py"
     model_device = get_device()
-    model = init_detector(model_config, model_checkpoint, device=model_device)
-    results = inference_detector(model, np.array(image))
+
+    if mmcv_legacy:
+        model = init_detector(model_config, model_checkpoint, device=model_device)
+        results = inference_detector(model, np.array(image))
+    else:
+        model = init_detector(model_config, model_checkpoint, device=model_device, palette="random")
+        output = inference_detector(model, np.array(image)).pred_instances
     cv2_image = np.array(image)
     cv2_image = cv2_image[:, :, ::-1].copy()
     cv2_gray = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2GRAY)
 
     segms = []
-    for (x0, y0, x1, y1, conf) in results[0]:
+    bboxes = []
+    if mmcv_legacy:
+        for (x0, y0, x1, y1, conf) in results[0]:
+            bboxes.append([x0, y0, x1, y1])
+    else:
+        bboxes = output.bboxes
+
+    for x0, y0, x1, y1 in bboxes:
         cv2_mask = np.zeros((cv2_gray.shape), np.uint8)
         cv2.rectangle(cv2_mask, (int(x0), int(y0)), (int(x1), int(y1)), 255, -1)
         cv2_mask_bool = cv2_mask.astype(bool)
         segms.append(cv2_mask_bool)
-    
-    n,m = results[0].shape
+
+    if mmcv_legacy:
+        n,m = results[0].shape
+    else:
+        n,m = output.bboxes.shape
     if (n == 0):
-        return [[],[],[]]
-    bboxes = np.vstack(results[0])
-    filter_inds = np.where(bboxes[:,-1] > conf_thres)[0]
-    results = [[],[],[]]
+        if mmcv_legacy:
+            return [[],[],[]]
+        else:
+            return [[],[],[],[]]
+    if mmcv_legacy:
+        bboxes = np.vstack(results[0])
+        filter_inds = np.where(bboxes[:,-1] > conf_thres)[0]
+        results = [[],[],[]]
+    else:
+        bboxes = output.bboxes.numpy()
+        scores = output.scores.numpy()
+        filter_inds = np.where(scores > conf_thres)[0]
+        results = [[],[],[],[]]
+
     for i in filter_inds:
         results[0].append(label)
         results[1].append(bboxes[i])
         results[2].append(segms[i])
+        if not mmcv_legacy:
+            results[3].append(scores[i])
 
     return results
 
