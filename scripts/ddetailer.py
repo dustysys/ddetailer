@@ -79,35 +79,43 @@ class DetectionDetailerScript(scripts.Script):
             info = gr.HTML("<p style=\"margin-bottom:0.75em\">Recommended settings: Use from inpaint tab, inpaint at full res ON, denoise <0.5</p>")
         else:
             info = gr.HTML("")
+        dd_prompt = None
         with gr.Group():
+            if not is_img2img:
+                with gr.Row():
+                    dd_prompt = gr.Textbox(label="dd_prompt", elem_id="t2i_dd_prompt", show_label=False, lines=3, placeholder="Ddetailer Prompt")
+
+                with gr.Row():
+                    dd_neg_prompt = gr.Textbox(label="dd_neg_prompt", elem_id="t2i_dd_neg_prompt", show_label=False, lines=2, placeholder="Ddetailer Negative prompt")
+
             with gr.Row():
                 dd_model_a = gr.Dropdown(label="Primary detection model (A)", choices=model_list,value = "None", visible=True, type="value")
             
             with gr.Row():
-                dd_conf_a = gr.Slider(label='Detection confidence threshold % (A)', minimum=0, maximum=100, step=1, value=30, visible=False)
-                dd_dilation_factor_a = gr.Slider(label='Dilation factor (A)', minimum=0, maximum=255, step=1, value=4, visible=False)
+                dd_conf_a = gr.Slider(label='Detection confidence threshold % (A)', minimum=0, maximum=100, step=1, value=30, visible=True)
+                dd_dilation_factor_a = gr.Slider(label='Dilation factor (A)', minimum=0, maximum=255, step=1, value=4, visible=True)
 
             with gr.Row():
-                dd_offset_x_a = gr.Slider(label='X offset (A)', minimum=-200, maximum=200, step=1, value=0, visible=False)
-                dd_offset_y_a = gr.Slider(label='Y offset (A)', minimum=-200, maximum=200, step=1, value=0, visible=False)
+                dd_offset_x_a = gr.Slider(label='X offset (A)', minimum=-200, maximum=200, step=1, value=0, visible=True)
+                dd_offset_y_a = gr.Slider(label='Y offset (A)', minimum=-200, maximum=200, step=1, value=0, visible=True)
             
             with gr.Row():
-                dd_preprocess_b = gr.Checkbox(label='Inpaint model B detections before model A runs', value=False, visible=False)
-                dd_bitwise_op = gr.Radio(label='Bitwise operation', choices=['None', 'A&B', 'A-B'], value="None", visible=False)  
+                dd_preprocess_b = gr.Checkbox(label='Inpaint model B detections before model A runs', value=False, visible=True)
+                dd_bitwise_op = gr.Radio(label='Bitwise operation', choices=['None', 'A&B', 'A-B'], value="None", visible=True)
         
         br = gr.HTML("<br>")
 
         with gr.Group():
             with gr.Row():
-                dd_model_b = gr.Dropdown(label="Secondary detection model (B) (optional)", choices=model_list,value = "None", visible =False, type="value")
+                dd_model_b = gr.Dropdown(label="Secondary detection model (B) (optional)", choices=model_list,value = "None", visible =True, type="value")
 
             with gr.Row():
-                dd_conf_b = gr.Slider(label='Detection confidence threshold % (B)', minimum=0, maximum=100, step=1, value=30, visible=False)
-                dd_dilation_factor_b = gr.Slider(label='Dilation factor (B)', minimum=0, maximum=255, step=1, value=4, visible=False)
+                dd_conf_b = gr.Slider(label='Detection confidence threshold % (B)', minimum=0, maximum=100, step=1, value=30, visible=True)
+                dd_dilation_factor_b = gr.Slider(label='Dilation factor (B)', minimum=0, maximum=255, step=1, value=4, visible=True)
             
             with gr.Row():
-                dd_offset_x_b = gr.Slider(label='X offset (B)', minimum=-200, maximum=200, step=1, value=0, visible=False)
-                dd_offset_y_b = gr.Slider(label='Y offset (B)', minimum=-200, maximum=200, step=1, value=0, visible=False)
+                dd_offset_x_b = gr.Slider(label='X offset (B)', minimum=-200, maximum=200, step=1, value=0, visible=True)
+                dd_offset_y_b = gr.Slider(label='Y offset (B)', minimum=-200, maximum=200, step=1, value=0, visible=True)
         
         with gr.Group():
             with gr.Row():
@@ -117,6 +125,9 @@ class DetectionDetailerScript(scripts.Script):
             with gr.Row():
                 dd_inpaint_full_res = gr.Checkbox(label='Inpaint at full resolution ', value=True, visible = (not is_img2img))
                 dd_inpaint_full_res_padding = gr.Slider(label='Inpaint at full resolution padding, pixels ', minimum=0, maximum=256, step=4, value=32, visible=(not is_img2img))
+
+            with gr.Row():
+                dd_cfg_scale = gr.Slider(label='CFG Scale', minimum=0, maximum=30, step=0.5, value=7, visible=True)
 
         dd_model_a.change(
             lambda modelname: {
@@ -143,8 +154,30 @@ class DetectionDetailerScript(scripts.Script):
             inputs= [dd_model_b],
             outputs =[dd_preprocess_b, dd_bitwise_op, dd_conf_b, dd_dilation_factor_b, dd_offset_x_b, dd_offset_y_b]
         )
-        
-        return [info,
+        if dd_prompt:
+            self.infotext_fields = (
+                (dd_prompt, "DDetailer prompt"),
+                (dd_neg_prompt, "DDetailer neg prompt"),
+                (dd_model_a, "DDetailer model a"),
+                (dd_conf_a, "DDetailer conf a"),
+                (dd_dilation_factor_a, "DDetailer dilation a"),
+                (dd_offset_x_a, "DDetailer offset x a"),
+                (dd_offset_y_a, "DDetailer offset y a"),
+                (dd_preprocess_b, "DDetailer preprocess b"),
+                (dd_bitwise_op, "DDetailer bitwise"),
+                (dd_model_b, "DDetailer model b"),
+                (dd_conf_b, "DDetailer conf b"),
+                (dd_dilation_factor_b, "DDetailer dilation b"),
+                (dd_offset_x_b, "DDetailer offset x b"),
+                (dd_offset_y_b, "DDetailer offset y b"),
+                (dd_mask_blur, "DDetailer mask blur"),
+                (dd_denoising_strength, "DDetailer denoising"),
+                (dd_inpaint_full_res, "DDetailer inpaint full"),
+                (dd_inpaint_full_res_padding, "DDetailer inpaint padding"),
+                (dd_cfg_scale, "DDetailer cfg")
+            )
+
+        ret = [info,
                 dd_model_a, 
                 dd_conf_a, dd_dilation_factor_a,
                 dd_offset_x_a, dd_offset_y_a,
@@ -154,8 +187,12 @@ class DetectionDetailerScript(scripts.Script):
                 dd_conf_b, dd_dilation_factor_b,
                 dd_offset_x_b, dd_offset_y_b,  
                 dd_mask_blur, dd_denoising_strength,
-                dd_inpaint_full_res, dd_inpaint_full_res_padding
+                dd_inpaint_full_res, dd_inpaint_full_res_padding,
+                dd_cfg_scale
         ]
+        if not is_img2img:
+            ret += [dd_prompt, dd_neg_prompt]
+        return ret
 
     def run(self, p, info,
                      dd_model_a, 
@@ -167,10 +204,12 @@ class DetectionDetailerScript(scripts.Script):
                      dd_conf_b, dd_dilation_factor_b,
                      dd_offset_x_b, dd_offset_y_b,  
                      dd_mask_blur, dd_denoising_strength,
-                     dd_inpaint_full_res, dd_inpaint_full_res_padding):
+                     dd_inpaint_full_res, dd_inpaint_full_res_padding,
+                     dd_cfg_scale,
+                     dd_prompt=None, dd_neg_prompt=None):
 
         processing.fix_seed(p)
-        initial_info = None
+        dd_info = None
         seed = p.seed
         p.batch_size = 1
         ddetail_count = p.n_iter
@@ -182,6 +221,11 @@ class DetectionDetailerScript(scripts.Script):
             orig_image = p.init_images[0]
         else:
             p_txt = p
+            img2img_sampler_name = p_txt.sampler_name
+            if p_txt.sampler_name in ['PLMS', 'UniPC']:  # PLMS/UniPC do not support img2img so we just silently switch to DDIM
+                img2img_sampler_name = 'DDIM'
+            p_txt_prompt = dd_prompt if dd_prompt else p_txt.prompt
+            p_txt_neg_prompt = dd_neg_prompt if dd_neg_prompt else p_txt.negative_prompt
             p = StableDiffusionProcessingImg2Img(
                     init_images = None,
                     resize_mode = 0,
@@ -195,18 +239,18 @@ class DetectionDetailerScript(scripts.Script):
                     sd_model=p_txt.sd_model,
                     outpath_samples=p_txt.outpath_samples,
                     outpath_grids=p_txt.outpath_grids,
-                    prompt=p_txt.prompt,
-                    negative_prompt=p_txt.negative_prompt,
+                    prompt=p_txt_prompt,
+                    negative_prompt=p_txt_neg_prompt,
                     styles=p_txt.styles,
                     seed=p_txt.seed,
                     subseed=p_txt.subseed,
                     subseed_strength=p_txt.subseed_strength,
                     seed_resize_from_h=p_txt.seed_resize_from_h,
                     seed_resize_from_w=p_txt.seed_resize_from_w,
-                    sampler_name=p_txt.sampler_name,
+                    sampler_name=img2img_sampler_name,
                     n_iter=p_txt.n_iter,
                     steps=p_txt.steps,
-                    cfg_scale=p_txt.cfg_scale,
+                    cfg_scale=dd_cfg_scale,
                     width=p_txt.width,
                     height=p_txt.height,
                     tiling=p_txt.tiling,
@@ -222,7 +266,8 @@ class DetectionDetailerScript(scripts.Script):
                 print(f"Processing initial image for output generation {n + 1}.")
                 p_txt.seed = start_seed
                 processed = processing.process_images(p_txt)
-                init_image = processed.images[0]   
+                init_image = processed.images[0]
+                info = processed.info
             else: 
                 init_image = orig_image
             
@@ -314,23 +359,30 @@ class DetectionDetailerScript(scripts.Script):
                             images.save_image(masks_a[i], opts.outdir_ddetailer_masks, "", start_seed, p.prompt, opts.samples_format, p=p)
                         
                         processed = processing.process_images(p)
-                        if initial_info is None:
-                            initial_info = processed.info
+                        if dd_info is None:
+                            dd_info = info + (f", DDetailer prompt: \"{dd_prompt}\", DDetailer neg prompt: \"{dd_neg_prompt}\", "
+                                              f"DDetailer model a: \"{dd_model_a}\", DDetailer conf a: {dd_conf_a}, "
+                                              f"DDetailer dilation a: {dd_dilation_factor_a}, DDetailer offset x a: {dd_offset_x_a}, DDetailer offset y a: {dd_offset_y_a}, "
+                                              f"DDetailer preprocess b: {dd_preprocess_b}, DDetailer bitwise: {dd_bitwise_op}, DDetailer model b: \"{dd_model_b}\", "
+                                              f"DDetailer conf b: {dd_conf_b}, DDetailer dilation b: {dd_dilation_factor_b}, DDetailer offset x b: {dd_offset_x_b}, "
+                                              f"DDetailer offset y b: {dd_offset_y_b}, DDetailer mask blur: {dd_mask_blur}, DDetailer denoising: {dd_denoising_strength}, "
+                                              f"DDetailer inpaint full: {dd_inpaint_full_res}, DDetailer inpaint padding: {dd_inpaint_full_res_padding}, "
+                                              f"DDetailer cfg: {dd_cfg_scale}").replace("\n", " ")
                         p.seed = processed.seed + 1
                         p.init_images = processed.images
                     
                     if (gen_count > 0):
                         output_images[n] = processed.images[0]
                         if ( opts.samples_save ):
-                            images.save_image(processed.images[0], p.outpath_samples, "", start_seed, p.prompt, opts.samples_format, info=initial_info, p=p)
+                            images.save_image(processed.images[0], p.outpath_samples, "", start_seed, p.prompt, opts.samples_format, info=dd_info, p=p)
   
                 else: 
                     print(f"No model {label_a} detections for output generation {n} with current settings.")
             state.job = f"Generation {n + 1} out of {state.job_count}"
-        if (initial_info is None):
-            initial_info = "No detections found."
+        if (dd_info is None):
+            dd_info = info + ", No detections found."
 
-        return Processed(p, output_images, seed, initial_info)
+        return Processed(p, output_images, seed, dd_info)
 
 def modeldataset(model_shortname):
     path = modelpath(model_shortname)
