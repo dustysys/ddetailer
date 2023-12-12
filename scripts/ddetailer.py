@@ -230,6 +230,12 @@ class DetectionDetailerScript(scripts.Script):
             masks_a = []
             masks_b_pre = []
 
+            init_prompts = init_image.info['parameters'].split('Negative prompt:')
+            init_pos_prompt = init_prompts[0].rstrip('\n')
+            init_neg_prompt = ''
+            if len(init_prompts) > 1:
+                init_neg_prompt = init_prompts[1].split('Steps:')[0].lstrip().rstrip('\n')
+            
             # Optional secondary pre-processing run
             if (dd_model_b != "None" and dd_preprocess_b): 
                 label_b_pre = "B"
@@ -253,7 +259,11 @@ class DetectionDetailerScript(scripts.Script):
                         p.image_mask = masks_b_pre[i]
                         if ( opts.dd_save_masks):
                             images.save_image(masks_b_pre[i], opts.outdir_ddetailer_masks, "", start_seed, p.prompt, opts.samples_format, p=p)
+                        p.prompt = init_pos_prompt
+                        p.negative_prompt = init_neg_prompt
                         processed = processing.process_images(p)
+                        p.prompt = p_txt.prompt
+                        p.negative_prompt = p_txt.negative_prompt
                         p.seed = processed.seed + 1
                         p.init_images = processed.images
 
@@ -313,8 +323,12 @@ class DetectionDetailerScript(scripts.Script):
                         if ( opts.dd_save_masks):
                             images.save_image(masks_a[i], opts.outdir_ddetailer_masks, "", start_seed, p.prompt, opts.samples_format, p=p)
                         
+                        p.prompt = init_pos_prompt
+                        p.negative_prompt = init_neg_prompt
                         processed = processing.process_images(p)
-                        if initial_info is None:
+                        p.prompt = p_txt.prompt
+                        p.negative_prompt = p_txt.negative_prompt
+                        if initial_info is None or initial_info != processed.info:
                             initial_info = processed.info
                         p.seed = processed.seed + 1
                         p.init_images = processed.images
@@ -330,7 +344,7 @@ class DetectionDetailerScript(scripts.Script):
         if (initial_info is None):
             initial_info = "No detections found."
 
-        return Processed(p, output_images, seed, initial_info)
+        return Processed(p, output_images, seed, p_txt.prompt)
 
 def modeldataset(model_shortname):
     path = modelpath(model_shortname)
